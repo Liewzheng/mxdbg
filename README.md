@@ -14,11 +14,13 @@
 
 This is designed to be easy to use and to provide a simple interface for debugging programs or test environment. It is written in C in Embedded system, and use python for the front-end.
 
+![ESP32-S3-Pico-details-inter](./Documents/ESP32-S3-Pico-details-inter.jpg)
+
 ## How to use
 
 ### PWM
 
-- PWM pin: `17`
+- PWM pin: Channel `0` (`16`), Channel `1` (`17`), Channel `2` (`18`)
 - Frequency: `10KHz`
 - Duty cycle: `25%`
 
@@ -30,15 +32,15 @@ from mxdbg import MXDBG
 dev = MXDBG()
 
 # Set the PWM frequency and duty cycle
-ret, data = dev.pwm_config(17, 361, 0.5, 8000000)
+ret, data = dev.pwm_config(pin=16, freq=361, duty=0.5, channel=0)
 print(ret, data)
 
 # enable the PWM
-ret, data = dev.pwm_run_stop(True)
+ret, data = dev.pwm_run_stop(True, channel=0)
 print(ret, data)
 
 # disable the PWM
-ret, data = dev.pwm_run_stop(False)
+ret, data = dev.pwm_run_stop(False, channel=0)
 print(ret, data)
 
 ```
@@ -139,16 +141,20 @@ for _ in range(100):
 1. Replace the 0Ohm resistors (R10 / R11 / R12 / R13) between the SPI and the device.
 2. Increase or decrease the frequency of the SPI signal.
 
-![SPI Wave Signal](./Documents/SPI_WAVE_1V2_500KHz.png)
+![SPI Wave Signal 500KHz](./Documents/SPI_WAVE_1V2_500KHz.png)
 
-![SPI Wave Signal](./Documents/SPI_WAVE_1V2_4MHz.png)
+![SPI Wave Signal 4MHz](./Documents/SPI_WAVE_1V2_4MHz.png)
 
 
-# ExtBoard for MXDBG
+# ExtBoard for MXDBG v0.1
 
 ![Extention Board for MXDBG](./Documents/ExtBoard_for_MXDBG_v0.1.png)
 
 ![PCB of ExtBoard for MXDBG](./Documents/PCB_ExtBoard_for_MXDBG_v0.1.png)
+
+The ExtBoard for MXDBG is connected with ESP32 S3 pico as follow.
+
+![ExtBoar_for_MXDBG_v0.1_instance](./Documents/ExtBoar_for_MXDBG_v0.1_instance.png)
 
 Read the [Schematic of ExtBoard for MXDBG](./Documents/SCH_Schematic1_2024-11-15.pdf) for more details.
 

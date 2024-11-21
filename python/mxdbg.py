@@ -156,7 +156,7 @@ class MXDBG:
 
         self._all_valid_pins = [-1, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                 14, 15, 16, 17, 18, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
-        self._pwm_used_pins = [17]
+        self._pwm_used_pins = [16, 17, 18]
         self._i2c_used_pins = [10, 11]
         self._spi_used_pins = [12, 13, 14, 15]
         self._gpio_used_pins = set()
@@ -500,6 +500,7 @@ class MXDBG:
                 continue
 
         if found_device_list != []:
+            found_device_list = ['0x{:02X}'.format(slave_id) for slave_id in found_device_list]
             return True, found_device_list
         else:
             return False, None
@@ -823,15 +824,25 @@ class MXDBG:
         else:
             return False, None
 
-    def pwm_run_stop(self, pwm_running_state: bool):
+    def pwm_run_stop(self, pwm_running_state: bool, channel: int = 0):
         '''
         @brief: Run or stop PWM. It will generate a PWM signal with 10KHz frequency and 25% duty cycle in default.
         @param pwm_running_state: True to run PWM, False to stop PWM.
+        @param channel: PWM channel. Default is 0. Available channels are 0, 1, 2.
         @return: Return True if success, False otherwise.
         '''
 
+        if channel not in [0, 1, 2]:
+            logger.error("Invalid channel number. Available channels are 0, 1, 2.")
+            return False
+
+        channel = ctypes.c_uint8(channel).value
         run_state = ctypes.c_uint8(pwm_running_state).value
-        ret, data = self.task_execute(self.task_cmd["TASK_PWM_RUN_STOP"], [run_state])
+        ret, data = self.task_execute(self.task_cmd["TASK_PWM_RUN_STOP"], [channel, run_state])
+        
+        if ret != 0:
+            logger.error(f"Error: {ret}")
+            return False
 
         self.check_ret_code(self.task_cmd["TASK_PWM_RUN_STOP"], ret)
 
@@ -842,13 +853,13 @@ class MXDBG:
 
         return self.pwm_run_state, ret
 
-    def pwm_config(self, pin: int = 17, freq: int = 10000, duty: float = 0.5, timer_resolution: int = 1000000):
+    def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0):
         '''
         @brief: Configure PWM.
-        @param pin: PWM pin number. Default is 17. Valid pin numbers are 17, 18, 33, 34, 35, 36, 37, 38, 39, 40.
+        @param pin: PWM pin number. pin of Channel 0: 16 (in default); pin of Channel 1: 17 (in default); pin of Channel 2: 18 (in default).
         @param freq: PWM frequency. Unit: Hz; Default is 10000 (10KHz). Frequency should be far less than timer resolution.
         @param duty: PWM duty cycle. Default is 0.5 (50%). Duty cycle should be in the range of 0.0 (0%) to 1.0 (100%).
-        @param timer_resolution: Timer resolution. Unit: Hz; Default is 1000000 (10MHz). Timer resolution should be in the range of 10000 (1MHz) to 80000000 (80MHz). The higher the resolution, the higher the precision of frequency and duty cycle.
+        @param channel: PWM channel. Default is 0. Available channels are 0, 1, 2.
         @return: Return True if success, False otherwise.
         '''
 
@@ -862,9 +873,7 @@ class MXDBG:
             logger.error("Invalid duty cycle. Duty cycle should be in the range of 0.0 to 1.0")
             return False, None
 
-        if timer_resolution < 10000 or timer_resolution > 80000000:
-            logger.error("Invalid timer resolution. Timer resolution should be in the range of 1000 to 80000000")
-            return False, None
+        timer_resolution = 80000000 # 80MHz
 
         if freq > timer_resolution:
             logger.error("Invalid frequency. Frequency should be less than timer resolution.")
@@ -875,13 +884,12 @@ class MXDBG:
         duty_ticks = int(period_ticks * duty)
 
         pin = ctypes.c_uint8(pin).value
+        channel = ctypes.c_uint8(channel).value
 
         logger.debug(f"Period Ticks: {period_ticks}, Duty Ticks: {duty_ticks}")
 
-        pwm_data_temp = [(pin & 0xFF),
-
-                         (resolution_hz & 0xFF000000) >> 24, (resolution_hz & 0x00FF0000) >> 16,
-                         (resolution_hz & 0x0000FF00) >> 8, resolution_hz & 0x000000FF,
+        pwm_data_temp = [(channel & 0xFF),
+                         (pin & 0xFF),
 
                          (period_ticks & 0xFF000000) >> 24, (period_ticks & 0x00FF0000) >> 16,
                          (period_ticks & 0x0000FF00) >> 8, period_ticks & 0x000000FF,
@@ -898,7 +906,7 @@ class MXDBG:
             self._pwm_used_pins = [pin]
 
         if self.pwm_run_state:
-            self.pwm_run_stop(True)
+            self.pwm_run_stop(True, channel)
 
         for pin in self._pwm_used_pins:
             self.mark_pin_free(pin)
@@ -1019,7 +1027,7 @@ class MXDBG:
             logger.error("I2C find slave failed.")
             raise ValueError("I2C find slave failed.")
         
-        if self.pca9557pw_addr not in data:
+        if self.pca9557pw_addr not in [int(slave_id, 16) for slave_id in data]:
             logger.error("PCA9557PW not found.")
             raise ValueError("PCA9557PW not found.")
         

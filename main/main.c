@@ -134,40 +134,29 @@ i2c_config_t i2c_conf1 = { .mode = I2C_MODE_MASTER,
 
 // PWM
 
-mcpwm_timer_handle_t pwm_timer = NULL;
-mcpwm_oper_handle_t pwm_operator = NULL;
-mcpwm_cmpr_handle_t pwm_comparator = NULL;
-mcpwm_gen_handle_t pwm_generator = NULL;
+#define MAX_PWM_CHANNELS 3
 
-mcpwm_timer_config_t timer_config = {
-    .group_id = 0,
-    .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
-    .resolution_hz = 1000000, // 分辨率为 1MHz，即 1us
-    .period_ticks = 100,      // 周期计数值，对应频率为 10kHz
-    .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
-};
+typedef struct {
+    mcpwm_timer_handle_t timer;
+    mcpwm_timer_config_t timer_config;
 
-mcpwm_operator_config_t operator_config = {
-    .group_id = 0,
-};
+    mcpwm_oper_handle_t operator;
+    mcpwm_operator_config_t operator_config;
 
-mcpwm_generator_config_t generator_config = {
-    .gen_gpio_num = 17,
-};
+    mcpwm_cmpr_handle_t comparator;
+    mcpwm_comparator_config_t comparator_config;
+    mcpwm_gen_compare_event_action_t compare_action_start;
+    mcpwm_gen_compare_event_action_t compare_action_stop;
 
-mcpwm_comparator_config_t comparator_config = {
-    .flags.update_cmp_on_tez = true, // 在计数器等于零时更新比较值
-};
+    mcpwm_gen_handle_t generator;
+    mcpwm_generator_config_t generator_config;
 
-mcpwm_gen_compare_event_action_t compare_action = {
-    .direction = MCPWM_TIMER_DIRECTION_UP,
-    .comparator = NULL,
-    .action = MCPWM_GEN_ACTION_LOW,
-};
+    uint32_t duty_cycle_ticks;
+    bool run_state;
 
-uint32_t pwm_duty_cycle_ticks = 25;
+} pwm_channel_t;
 
-bool pwm_run_state = false;
+pwm_channel_t pwm_channels[MAX_PWM_CHANNELS];
 
 // SPI
 
@@ -321,47 +310,47 @@ esp_err_t i2c_deinit(i2c_port_t port)
     return ret;
 }
 
-void pwm_init()
+void pwm_init(pwm_channel_t *channel)
 {
     // 1. 创建 MCPWM 定时器
-    ESP_ERROR_CHECK(mcpwm_new_timer(&timer_config, &pwm_timer));
+    ESP_ERROR_CHECK(mcpwm_new_timer(&(channel->timer_config), &(channel->timer)));
 
     // 2. 创建 MCPWM 操作器
-    ESP_ERROR_CHECK(mcpwm_new_operator(&operator_config, &pwm_operator));
+    ESP_ERROR_CHECK(mcpwm_new_operator(&(channel->operator_config), &(channel->operator)));
 
     // 3. 将操作器连接到定时器
-    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(pwm_operator, pwm_timer));
+    ESP_ERROR_CHECK(mcpwm_operator_connect_timer(channel->operator, channel->timer));
 
     // 4. 创建 MCPWM 比较器
-    ESP_ERROR_CHECK(mcpwm_new_comparator(pwm_operator, &comparator_config, &pwm_comparator));
-    compare_action.comparator = pwm_comparator;
+    ESP_ERROR_CHECK(mcpwm_new_comparator(channel->operator, &(channel->comparator_config), &(channel->comparator)));
+    channel->compare_action_start.comparator = channel->comparator;
 
     // 5. 创建 MCPWM 生成器并绑定到 GPIO
-    ESP_ERROR_CHECK(mcpwm_new_generator(pwm_operator, &generator_config, &pwm_generator));
+    ESP_ERROR_CHECK(mcpwm_new_generator(channel->operator, &(channel->generator_config), &(channel->generator)));
 
     // 6. 设置初始的生成器动作（PWM 停止状态，输出低电平）
     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(
-        pwm_generator,
+        channel->generator,
         MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY, MCPWM_GEN_ACTION_LOW)));
 
     // 设置比较值为 0，确保 PWM 停止时输出低电平
-    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(pwm_comparator, 0));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(channel->comparator, 0));
 
     // 设置比较事件动作，在比较事件发生时输出低电平
-    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(pwm_generator, compare_action));
+    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(channel->generator, channel->compare_action_start));
 
     // 7. 启用并启动 MCPWM 定时器
-    ESP_ERROR_CHECK(mcpwm_timer_enable(pwm_timer));
-    ESP_ERROR_CHECK(mcpwm_timer_start_stop(pwm_timer, MCPWM_TIMER_START_NO_STOP));
+    ESP_ERROR_CHECK(mcpwm_timer_enable(channel->timer));
+    ESP_ERROR_CHECK(mcpwm_timer_start_stop(channel->timer, MCPWM_TIMER_START_NO_STOP));
 }
 
-void pwm_deinit()
+void pwm_deinit(pwm_channel_t *channel)
 {
-    ESP_ERROR_CHECK(mcpwm_timer_disable(pwm_timer));
-    ESP_ERROR_CHECK(mcpwm_del_generator(pwm_generator));
-    ESP_ERROR_CHECK(mcpwm_del_comparator(pwm_comparator));
-    ESP_ERROR_CHECK(mcpwm_del_operator(pwm_operator));
-    ESP_ERROR_CHECK(mcpwm_del_timer(pwm_timer));
+    ESP_ERROR_CHECK(mcpwm_timer_disable(channel->timer));
+    ESP_ERROR_CHECK(mcpwm_del_generator(channel->generator));
+    ESP_ERROR_CHECK(mcpwm_del_comparator(channel->comparator));
+    ESP_ERROR_CHECK(mcpwm_del_operator(channel->operator));
+    ESP_ERROR_CHECK(mcpwm_del_timer(channel->timer));
 }
 
 esp_err_t spi_init()
@@ -771,22 +760,20 @@ void task_i2c_write_read(void *pvParameters)
                 if (read_length > 0) {
                     read_data_list = (uint8_t *)malloc(read_length);
                     if (read_data_list) {
-
                         // Write and read data
                         ret = i2c_master_write_read_device(i2c_port, slave_id, write_data_list, write_length,
                                                            read_data_list, read_length, 1000 / portTICK_PERIOD_MS);
-                        if(ret != ESP_OK) {
+                        if (ret != ESP_OK) {
                             ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
                         }
                     } else {
                         ESP_LOGE(TAG, "Memory allocation failed, ret: %d", ret);
                     }
                 } else {
-
                     // Write data only
                     ret = i2c_master_write_to_device(i2c_port, slave_id, write_data_list, write_length,
                                                      1000 / portTICK_PERIOD_MS);
-                    if(ret != ESP_OK) {
+                    if (ret != ESP_OK) {
                         ESP_LOGE(TAG, "I2C write failed, ret: %d", ret);
                     }
                 }
@@ -794,18 +781,16 @@ void task_i2c_write_read(void *pvParameters)
                 if (read_length > 0) {
                     read_data_list = (uint8_t *)malloc(read_length);
                     if (read_data_list) {
-
                         // Read data only
                         ret = i2c_master_read_from_device(i2c_port, slave_id, read_data_list, read_length,
                                                           1000 / portTICK_PERIOD_MS);
-                        if(ret != ESP_OK) {
+                        if (ret != ESP_OK) {
                             ESP_LOGE(TAG, "I2C read failed");
                         }
                     } else {
                         ESP_LOGE(TAG, "Memory allocation failed");
                     }
                 } else {
-
                     // Invalid I2C operation
                     ESP_LOGE(TAG, "Invalid I2C operation");
                     data_pack(NULL, 0, TASK_I2C_WRITE_READ, -100);
@@ -841,7 +826,6 @@ void task_i2c_config(void *pvParameters)
 
     while (1) {
         if (xSemaphoreTake(semaphore_i2c_config, portMAX_DELAY) == pdTRUE) {
-
             uint8_t i2c_port = com_data_content[0];
             uint32_t freq = DATA_SYNTHESIS_4_BYTES(&(com_data_content[1]));
             uint8_t sda_pin = com_data_content[5];
@@ -852,7 +836,7 @@ void task_i2c_config(void *pvParameters)
             i2c_deinit(i2c_port);
 
             i2c_config_t *i2c_conf = i2c_port == 0 ? (&i2c_conf0) : (&i2c_conf1);
-            
+
             i2c_conf->mode = I2C_MODE_MASTER;
             i2c_conf->sda_io_num = sda_pin;
             i2c_conf->scl_io_num = scl_pin;
@@ -1164,65 +1148,64 @@ void task_spi_config(void *pvParameters)
 
 void task_pwm_run_stop(void *pvParameters)
 {
-    bool cmd_pwm_run_state = false;
+    uint8_t channel = 0;
+    bool pwm_run_state = false;
+    pwm_channel_t *pPwmChannel = NULL;
 
     int ret = 0;
 
     while (1) {
         if (xSemaphoreTake(semaphore_pwm_run_stop, portMAX_DELAY) == pdTRUE) {
-            cmd_pwm_run_state = com_data_content[0] != 0 ? true : false;
+            channel = com_data_content[0];
+            pwm_run_state = com_data_content[1] != 0 ? true : false;
 
-            if (pwm_run_state) {
-                if (cmd_pwm_run_state) {
+            ESP_LOGI(TAG, "Channel: %d; Run state: %s", channel, pwm_run_state ? "True" : "False");
+
+            pPwmChannel = &(pwm_channels[channel]);
+
+            if (pwm_run_state) {              // True
+                if (pPwmChannel->run_state) { // True
                     ESP_LOGE(TAG, "PWM is already running");
                     ret = -1;
                 } else {
-                    // 停止 PWM，设置输出低电平
-                    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(pwm_comparator, 0));
+                    // make it run
+                    ESP_ERROR_CHECK(
+                        mcpwm_comparator_set_compare_value(pPwmChannel->comparator, pPwmChannel->duty_cycle_ticks));
 
-                    // 在计数器等于零时，输出低电平
                     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(
-                        pwm_generator, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY,
-                                                                    MCPWM_GEN_ACTION_LOW)));
+                        pPwmChannel->generator,
+                        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY,
+                                                     MCPWM_GEN_ACTION_HIGH)));
 
-                    // 设置比较事件动作，在比较事件发生时输出低电平
-                    mcpwm_gen_compare_event_action_t compare_action_stop = {
-                        .direction = MCPWM_TIMER_DIRECTION_UP,
-                        .comparator = pwm_comparator,
-                        .action = MCPWM_GEN_ACTION_LOW,
-                    };
-                    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(pwm_generator, compare_action_stop));
+                    pPwmChannel->compare_action_start.comparator = pPwmChannel->comparator;
+                    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(pPwmChannel->generator,
+                                                                                pPwmChannel->compare_action_start));
 
                     ret = 0;
 
                     if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE) {
-                        pwm_run_state = false;
+                        pPwmChannel->run_state = true;
                         xSemaphoreGive(semaphore_pwm_running_state);
                     }
                 }
             } else {
-                if (cmd_pwm_run_state) {
-                    // 启动 PWM，设置占空比为 100%
-                    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(pwm_comparator, pwm_duty_cycle_ticks));
+                if (!(pPwmChannel->run_state)) {
+                    // make it stop
+                    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(pPwmChannel->comparator, 0));
 
-                    // 设置生成器动作
-                    // 在计数器等于零时，输出高电平
                     ESP_ERROR_CHECK(mcpwm_generator_set_action_on_timer_event(
-                        pwm_generator, MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY,
-                                                                    MCPWM_GEN_ACTION_HIGH)));
+                        pPwmChannel->generator,
+                        MCPWM_GEN_TIMER_EVENT_ACTION(MCPWM_TIMER_DIRECTION_UP, MCPWM_TIMER_EVENT_EMPTY,
+                                                     MCPWM_GEN_ACTION_LOW)));
 
-                    // 当计数器等于比较值时，输出低电平
-                    mcpwm_gen_compare_event_action_t compare_action_start = {
-                        .direction = MCPWM_TIMER_DIRECTION_UP,
-                        .comparator = pwm_comparator,
-                        .action = MCPWM_GEN_ACTION_LOW,
-                    };
-                    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(pwm_generator, compare_action_start));
+                    pPwmChannel->compare_action_stop.comparator = pPwmChannel->comparator;
+                    ESP_ERROR_CHECK(mcpwm_generator_set_action_on_compare_event(pPwmChannel->generator,
+                                                                                pPwmChannel->compare_action_stop));
 
                     ret = 0;
 
                     if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE) {
-                        pwm_run_state = true;
+                        pPwmChannel->run_state = false;
                         xSemaphoreGive(semaphore_pwm_running_state);
                     }
 
@@ -1239,34 +1222,36 @@ void task_pwm_run_stop(void *pvParameters)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    ESP_ERROR_CHECK(mcpwm_timer_disable(pwm_timer));
-    ESP_ERROR_CHECK(mcpwm_del_generator(pwm_generator));
-    ESP_ERROR_CHECK(mcpwm_del_comparator(pwm_comparator));
-    ESP_ERROR_CHECK(mcpwm_del_operator(pwm_operator));
-    ESP_ERROR_CHECK(mcpwm_del_timer(pwm_timer));
-
+    pwm_deinit(&(pwm_channels[channel]));
     vTaskDelete(NULL);
 }
 
 void task_pwm_config(void *pvParameters)
 {
-    uint32_t resolution_hz = 0;
+    uint8_t channel = 0;
+    uint8_t gen_gpio_num = 0;
     uint32_t period_ticks = 0;
     uint32_t duty_cycle_ticks = 0;
-    int gen_gpio_num = 0;
+
+    pwm_channel_t *pPwmChannel = NULL;
 
     while (1) {
         if (xSemaphoreTake(semaphore_pwm_config, portMAX_DELAY) == pdTRUE) {
-            gen_gpio_num = com_data_content[0];
-            resolution_hz = DATA_SYNTHESIS_4_BYTES(&(com_data_content[1]));
-            period_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[5]));
-            duty_cycle_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[9]));
+            channel = com_data_content[0];
+            gen_gpio_num = com_data_content[1];
+            period_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[2]));
+            duty_cycle_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[6]));
 
-            if (gen_gpio_num == 0) {
-                gen_gpio_num = generator_config.gen_gpio_num; // set as default
+            if (channel >= MAX_PWM_CHANNELS) {
+                ESP_LOGE(TAG, "Invalid PWM channel");
+                data_pack(NULL, 0, TASK_PWM_CONFIG, -1);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            } else {
+                pPwmChannel = &(pwm_channels[channel]);
             }
 
-            if (resolution_hz == 0 || period_ticks == 0 || duty_cycle_ticks == 0) {
+            if (period_ticks == 0 || duty_cycle_ticks == 0) {
                 ESP_LOGE(TAG, "Invalid PWM configuration");
                 data_pack(NULL, 0, TASK_PWM_CONFIG, -1);
                 xSemaphoreGive(semaphore_task_notify);
@@ -1281,19 +1266,18 @@ void task_pwm_config(void *pvParameters)
             }
 
             if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE) {
-                if (pwm_run_state) {
-                    pwm_run_state = false;
+                if (pwm_channels[channel].run_state) {
+                    pwm_channels[channel].run_state = false;
                 }
 
                 // 重新配置 PWM
-                pwm_deinit();
+                pwm_deinit(&(pwm_channels[channel]));
 
-                timer_config.resolution_hz = resolution_hz;
-                timer_config.period_ticks = period_ticks;
-                pwm_duty_cycle_ticks = duty_cycle_ticks;
-                generator_config.gen_gpio_num = gen_gpio_num;
+                pPwmChannel->timer_config.period_ticks = period_ticks;
+                pPwmChannel->generator_config.gen_gpio_num = gen_gpio_num;
+                pPwmChannel->duty_cycle_ticks = duty_cycle_ticks;
 
-                pwm_init();
+                pwm_init(&(pwm_channels[channel]));
                 data_pack(NULL, 0, TASK_PWM_CONFIG, 0);
                 xSemaphoreGive(semaphore_pwm_running_state);
             } else {
@@ -1323,8 +1307,7 @@ void task_spi_read_image(void *pvParameters)
 
             spi_device_acquire_bus(spi, portMAX_DELAY);
 
-            if (chip_init == false)
-            {
+            if (chip_init == false) {
                 paw3311dw_init();
                 chip_init = true;
             }
@@ -1351,7 +1334,6 @@ void task_usb_config(void *pvParameters)
 {
     while (1) {
         if (xSemaphoreTake(semaphore_usb_config, portMAX_DELAY) == pdTRUE) {
-
             crc_enable = com_data_content[0] != 0 ? true : false;
 
             data_pack(NULL, 0, TASK_USB_CONFIG, 0);
@@ -1368,11 +1350,116 @@ void task_usb_config(void *pvParameters)
 
 void app_main()
 {
+    pwm_channels[0] = (pwm_channel_t){
+        .timer = NULL,
+        .operator = NULL,
+        .generator = NULL,
+        .comparator = NULL,
+        .timer_config = {
+            .group_id = 0,
+            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+            .resolution_hz = 80000000, // 80MHz
+            .period_ticks = 100,      // 周期计数值，对应频率为 800KHz
+            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+        },
+        .operator_config = {
+            .group_id = 0,
+        },
+        .generator_config = {
+            .gen_gpio_num = 16,
+        },
+        .comparator_config = {
+            .flags.update_cmp_on_tez = true, // 在计数器等于零时更新比较值
+        },
+        .compare_action_start = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .compare_action_stop = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .duty_cycle_ticks = 25,
+        .run_state = false
+    };
+    pwm_channels[1] = (pwm_channel_t){
+        .timer = NULL,
+        .operator = NULL,
+        .generator = NULL,
+        .comparator = NULL,
+        .timer_config = {
+            .group_id = 0,
+            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+            .resolution_hz = 80000000, // 80MHz
+            .period_ticks = 1000,      // 周期计数值，对应频率为 80KHz
+            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+        },
+        .operator_config = {
+            .group_id = 0,
+        },
+        .generator_config = {
+            .gen_gpio_num = 17,
+        },
+        .comparator_config = {
+            .flags.update_cmp_on_tez = true, // 在计数器等于零时更新比较值
+        },
+        .compare_action_start = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .compare_action_stop = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .duty_cycle_ticks = 25,
+        .run_state = false
+    };
+    pwm_channels[2] = (pwm_channel_t){
+        .timer = NULL,
+        .operator = NULL,
+        .generator = NULL,
+        .comparator = NULL,
+        .timer_config = {
+            .group_id = 0,
+            .clk_src = MCPWM_TIMER_CLK_SRC_DEFAULT,
+            .resolution_hz = 80000000, // 80MHz
+            .period_ticks = 1000,      // 周期计数值，对应频率为 80KHz
+            .count_mode = MCPWM_TIMER_COUNT_MODE_UP,
+        },
+        .operator_config = {
+            .group_id = 0,
+        },
+        .generator_config = {
+            .gen_gpio_num = 18,
+        },
+        .comparator_config = {
+            .flags.update_cmp_on_tez = true, // 在计数器等于零时更新比较值
+        },
+        .compare_action_start = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .compare_action_stop = {
+            .direction = MCPWM_TIMER_DIRECTION_UP,
+            .comparator = NULL,
+            .action = MCPWM_GEN_ACTION_LOW,
+        },
+        .duty_cycle_ticks = 25,
+        .run_state = false
+    };
+
     tiny_usb_init();
     i2c_init(0);
     i2c_init(1);
     spi_init();
-    pwm_init();
+    pwm_init(&(pwm_channels[0]));
+    pwm_init(&(pwm_channels[1]));
+    pwm_init(&(pwm_channels[2]));
 
     semaphore_duty_call = xSemaphoreCreateBinary();
     if (semaphore_duty_call == NULL) {
@@ -1468,4 +1555,12 @@ void app_main()
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+
+    pwm_deinit(&(pwm_channels[0]));
+    pwm_deinit(&(pwm_channels[1]));
+    pwm_deinit(&(pwm_channels[2]));
+
+    spi_deinit();
+    i2c_deinit(0);
+    i2c_deinit(1);
 }

@@ -18,6 +18,9 @@ except ImportError:
 import ctypes
 from types import MappingProxyType
 import time
+import toml
+import re
+import os, sys
 
 try:
     from serial import Serial
@@ -35,23 +38,10 @@ class MXDBG:
         self.pwm_run_state = False
 
         self._crc_enable = True
-
-        # task cmd
-        __constants_task__ = {
-            "TASK_IDLE": 0,  # heartbeat task
-            "TASK_I2C_WRITE_READ": 1,
-            "TASK_I2C_CONFIG": 2,
-            "TASK_GPIO_WRITE_READ": 3,
-            "TASK_GPIO_CONFIG": 4,
-            "TASK_SPI_WRITE_READ": 5,
-            "TASK_SPI_CONFIG": 6,
-            "TASK_PWM_RUN_STOP": 7,
-            "TASK_PWM_CONFIG": 8,
-            "TASK_SPI_READ_IMAGE": 9,
-            "TASK_USB_CONFIG": 240,
-        }
-
-        self.task_cmd = MappingProxyType(__constants_task__)
+        
+        self._mxdbg_header_file = None
+        self.mxdbg_toml_path = None
+        self.version, self.task_cmd, self.error_map = self._parse_and_map()
 
         __constants_gpio_mode__ = {
             "GPIO_MODE_DISABLE": 0,
@@ -113,46 +103,6 @@ class MXDBG:
         }
 
         self.spi_device = MappingProxyType(__constants_spi_device__)
-
-        __constants_ret_code_of_each_cmd__ = {
-
-
-            "TASK_SPI_WRITE_READ": {
-                "RET_OK": {
-                    "value": 0,
-                    "description": "Success.",
-                },
-                "RET_ERROR_LENGTH": {
-                    "value": -1,
-                    "description": "Wrong write_len and read_len",
-                },
-                "RET_ERROR_READ_LENGTH": {
-                    "value": -2,
-                    "description": "Read length should not be larger than write length",
-                },
-                "RET_ERROR_MEMORY_ALLOCATION": {
-                    "value": -3,
-                    "description": "Memory allocation failed",
-                },
-            },
-
-            "TASK_PWM_RUN_STOP": {
-                "RET_OK": {
-                    "value": 0,
-                    "description": "Success.",
-                },
-                "RET_ERROR_RUNNING": {
-                    "value": -1,
-                    "description": "PWM is already running",
-                },
-                "RET_ERROR_STOPPED": {
-                    "value": -2,
-                    "description": "PWM is already stopped.",
-                },
-            }
-        }
-
-        self.ret_code = MappingProxyType(__constants_ret_code_of_each_cmd__)
 
         self._all_valid_pins = [-1, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                 14, 15, 16, 17, 18, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
@@ -301,6 +251,8 @@ class MXDBG:
 
         except Exception as e:
             raise ValueError(f"Failed to connect: {e}")
+        
+        logger.info("Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
 
     def disconnect(self):
         self._client.close()
@@ -467,21 +419,180 @@ class MXDBG:
             temp_data = None
 
         return ret, temp_data
+    
+    def _parse_version(self, lines):
+        """Parse VERSION_MAJOR and VERSION_MINOR from header file."""
+        try:
+            major_pattern = re.compile(r"#define\s+VERSION_MAJOR\s+(\d+)")
+            minor_pattern = re.compile(r"#define\s+VERSION_MINOR\s+(\d+)")
 
-    def check_ret_code(self, cmd, ret):
+            for line in lines:
+                major_match = major_pattern.search(line)
+                if major_match:
+                    version_major = int(major_match.group(1)) 
 
-        # check ret code
-        if ret == 0:
-            return True
+                minor_match = minor_pattern.search(line)
+                if minor_match:
+                    version_minor = int(minor_match.group(1))
+        except Exception as e:
+            raise ValueError(f"Error parsing version: {e}")
+    
+        return version_major, version_minor
+    
+    def _parse_task_cmd(self, lines):
+        """Parse TASK commands from header file."""
+        task_cmd = {}
+        try:
+            cmd_pattern = re.compile(r"TASK_(\w+)\s*=\s*(0x[0-9A-Fa-f]+|\d+),?")
+            for line in lines:
+                match = cmd_pattern.search(line)
+                if match:
+                    cmd_name = f"TASK_{match.group(1)}"
+                    cmd_id = int(match.group(2), 0)
+                    task_cmd[cmd_name] = cmd_id
+        except Exception as e:
+            raise ValueError(f"Error parsing task commands: {e}")
+        return task_cmd
+    
+    def _parse_error_map(self, lines, task_cmd, version_major, version_minor):
+        """Parse error codes from header file, including MXDBG_ERR and ESPRESSIF_ERR."""
+        error_map = {}
+        try:
+            # Regular expression to match ERR_SYNTHESIS with parameters
+            err_synthesis_pattern = re.compile(
+                r"#define\s+(MXDBG_ERR_\w+)\s+ERR_SYNTHESIS\((.+?)\)\s*/\*!\s*(.+?)\s*\*/"
+            )
 
+            # Regular expression to match simpler error patterns (e.g., ESPRESSIF_ERR)
+            simple_error_pattern = re.compile(
+                r"#define\s+(ESPRESSIF_ERR_\w+|ESPRESSIF_[A-Z_]+)\s+(0x[0-9A-Fa-f]+|\d+)\s*/\*!\s*(.+?)\s*\*/"
+            )
+
+            # Parse ERR_SYNTHESIS-based errors
+            for line in lines:
+                match = err_synthesis_pattern.search(line)
+                if match:
+                    error_name = match.group(1)  # e.g., "MXDBG_ERR_SPI_CONFIG_FAILED"
+                    synthesis_args = match.group(2)  # e.g., "TASK_SPI_CONFIG, 0x00"
+                    error_desc = match.group(3).strip()
+
+                    # Parse ERR_SYNTHESIS arguments
+                    args = synthesis_args.split(',')
+                    if len(args) == 2:
+                        task_name = args[0].strip()
+                        ret_code = int(args[1].strip(), 0)
+
+                        # Resolve task_id from task_cmd map
+                        task_id = task_cmd.get(task_name, 0xFF)
+
+                        # Compute error code based on ERR_SYNTHESIS logic
+                        version_combined = (version_major << 24) | (version_minor << 16)
+                        error_code = version_combined | (task_id << 8) | ret_code
+
+                        error_map[error_name] = {'code': ctypes.c_int32(error_code).value, 'desc': error_desc.replace('< ', '')}
+                    continue
+
+                # Parse simpler error patterns (ESPRESSIF_ERR)
+                match = simple_error_pattern.search(line)
+                if match:
+                    error_name = match.group(1)
+                    error_code = int(match.group(2), 0)
+                    error_desc = match.group(3).strip()
+                    # error_map[error_name] = (ctypes.c_int32(error_code).value, error_desc.replace('< ', ''))
+                    error_map[error_name] = {'code': ctypes.c_int32(error_code).value, 'desc': error_desc.replace('< ', '')}
+
+        except Exception as e:
+            raise ValueError(f"Error parsing error map: {e}")
+
+        return error_map
+
+    def _compute_error_code(self, version_major, version_minor, task_id, ret_code):
+        """Compute the error code based on task_id and ret_code."""
+        return ((version_major << 24) | (version_minor << 16) | (task_id << 8) | ret_code)
+
+    def _save_to_toml(self, path, version, task_cmd, error_map):
+        """Save parsed data to TOML file with additional annotations for version."""
+        try:
+            data = {
+                'version': version,
+                'task_cmd': task_cmd,
+                'error_map': error_map
+            }
+            
+            with open(path, 'w') as f:
+                toml.dump(data, f)
+                    
+        except Exception as e:
+            raise ValueError(f"Failed to save mxdbg.toml: {e}")
+        
+    def _parse_and_map(self):
+        
+        version = 0x00
+        task_cmd = {}
+        error_map = {}
+        
+        if os.path.exists(os.path.join(os.path.dirname(__file__), '../main/mxdbg.h')):
+            self._mxdbg_header_file = os.path.join(os.path.dirname(__file__), '../main/mxdbg.h')
+            self.mxdbg_toml_path = os.path.join(os.path.dirname(__file__), 'mxdbg.toml')
+        
         else:
-            # 匹配 self.ret_code 中的返回值，并打印错误信息
-            for key, value in self.ret_code.items():
-                if self.task_cmd[key] == cmd:
-                    for k, v in value.items():
-                        if v["value"] == ret:
-                            logger.error(f"{v['description']}")
-                            return False
+            for f in os.listdir(os.path.dirname(__file__)):
+                if f.endswith('.toml'):
+                    if f == 'mxdbg.toml':
+                        self.mxdbg_toml_path = os.path.join(os.path.dirname(__file__), f)
+                        break
+                elif f.endswith('.h'):
+                    if f == 'mxdbg.h':
+                        self._mxdbg_header_file = os.path.join(os.path.dirname(__file__), f)
+                        break
+                    
+            if self.mxdbg_toml_path is None and self._mxdbg_header_file is None:
+                raise FileNotFoundError("Please provide mxdbg.toml or mxdbg.h file to parse.")
+            
+        if self.mxdbg_toml_path:
+            
+            try:
+                with open(self.mxdbg_toml_path, 'r') as f:
+                    data = toml.load(f)
+
+                version = data.get('version', version)
+                task_cmd = data.get('task_cmd', task_cmd)
+                error_map = data.get('error_map', error_map)
+                
+            except Exception as e:
+                raise ValueError(f"Failed to load mxdbg.toml: {e}")
+                    
+        else:
+
+            try:
+                with open(self._mxdbg_header_file, 'r') as f:
+                    lines = f.readlines()
+                
+                version_major, version_minor = self._parse_version(lines)
+                version = {"MAJOR": version_major, "MINOR": version_minor}
+                
+                task_cmd = self._parse_task_cmd(lines)
+                        
+                error_map = self._parse_error_map(lines, task_cmd, version_major, version_minor)
+            
+                self._save_to_toml(self.mxdbg_toml_path, version, task_cmd, error_map)
+
+            except Exception as e:
+                raise ValueError(f"Failed to parse error map: {e}")
+
+        return version, task_cmd, error_map
+
+    def check_ret_code(self, cmd:int, ret:int):
+
+        if ret != 0:
+
+            error_code = self._compute_error_code(self.version["MAJOR"], self.version["MINOR"], cmd, ret)
+            error_desc = "Unknown error."
+            for key in self.error_map:
+                if self.error_map[key]["code"] == error_code:
+                    error_desc = self.error_map[key]["desc"]
+                    break
+            logger.error(f"Error code: 0x{ctypes.c_uint32(error_code).value:08X}, Description: {error_desc}")
 
     def i2c_find_slave(self, port: int = 0):
         
@@ -839,10 +950,6 @@ class MXDBG:
         channel = ctypes.c_uint8(channel).value
         run_state = ctypes.c_uint8(pwm_running_state).value
         ret, data = self.task_execute(self.task_cmd["TASK_PWM_RUN_STOP"], [channel, run_state])
-        
-        if ret != 0:
-            logger.error(f"Error: {ret}")
-            return False
 
         self.check_ret_code(self.task_cmd["TASK_PWM_RUN_STOP"], ret)
 
@@ -853,7 +960,7 @@ class MXDBG:
 
         return self.pwm_run_state, ret
 
-    def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0):
+    def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0, resolution_hz: int = 80000000):
         '''
         @brief: Configure PWM.
         @param pin: PWM pin number. pin of Channel 0: 16 (in default); pin of Channel 1: 17 (in default); pin of Channel 2: 18 (in default).
@@ -873,13 +980,13 @@ class MXDBG:
             logger.error("Invalid duty cycle. Duty cycle should be in the range of 0.0 to 1.0")
             return False, None
 
-        timer_resolution = 80000000 # 80MHz
+        timer_resolution = resolution_hz
 
         if freq > timer_resolution:
             logger.error("Invalid frequency. Frequency should be less than timer resolution.")
             return False, None
 
-        resolution_hz = ctypes.c_uint32(timer_resolution).value
+        timer_resolution = ctypes.c_uint32(timer_resolution).value
         period_ticks = ctypes.c_uint32(resolution_hz // freq).value
         duty_ticks = int(period_ticks * duty)
 
@@ -896,6 +1003,9 @@ class MXDBG:
 
                          (duty_ticks & 0xFF000000) >> 24, (duty_ticks & 0x00FF0000) >> 16,
                          (duty_ticks & 0x0000FF00) >> 8, duty_ticks & 0x000000FF,
+                         
+                         (timer_resolution & 0xFF000000) >> 24, (timer_resolution & 0x00FF0000) >> 16,
+                         (timer_resolution & 0x0000FF00) >> 8, timer_resolution & 0x000000FF
                          ]
 
         ret, _ = self.task_execute(self.task_cmd["TASK_PWM_CONFIG"], pwm_data_temp)

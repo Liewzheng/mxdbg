@@ -1,0 +1,196 @@
+[version]
+MAJOR = 1
+MINOR = 0
+
+[task_cmd]
+TASK_IDLE = 0
+TASK_I2C_WRITE_READ = 1
+TASK_I2C_CONFIG = 2
+TASK_GPIO_WRITE_READ = 3
+TASK_GPIO_CONFIG = 4
+TASK_SPI_WRITE_READ = 5
+TASK_SPI_CONFIG = 6
+TASK_PWM_RUN_STOP = 7
+TASK_PWM_CONFIG = 8
+TASK_SPI_READ_IMAGE = 9
+TASK_USB_CONFIG = 240
+
+[error_map.ESPRESSIF_OK]
+code = 0
+desc = "esp_err_t value indicating success (no error)"
+
+[error_map.ESPRESSIF_FAIL]
+code = -1
+desc = "Generic esp_err_t code indicating failure"
+
+[error_map.ESPRESSIF_ERR_NO_MEM]
+code = 257
+desc = "Out of memory"
+
+[error_map.ESPRESSIF_ERR_INVALID_ARG]
+code = 258
+desc = "Invalid argument"
+
+[error_map.ESPRESSIF_ERR_INVALID_STATE]
+code = 259
+desc = "Invalid state"
+
+[error_map.ESPRESSIF_ERR_INVALID_SIZE]
+code = 260
+desc = "Invalid size"
+
+[error_map.ESPRESSIF_ERR_NOT_FOUND]
+code = 261
+desc = "Requested resource not found"
+
+[error_map.ESPRESSIF_ERR_NOT_SUPPORTED]
+code = 262
+desc = "Operation or feature not supported"
+
+[error_map.ESPRESSIF_ERR_TIMEOUT]
+code = 263
+desc = "Operation timed out"
+
+[error_map.ESPRESSIF_ERR_INVALID_RESPONSE]
+code = 264
+desc = "Received response was invalid"
+
+[error_map.ESPRESSIF_ERR_INVALID_CRC]
+code = 265
+desc = "CRC or checksum was invalid"
+
+[error_map.ESPRESSIF_ERR_INVALID_VERSION]
+code = 266
+desc = "Version was invalid"
+
+[error_map.ESPRESSIF_ERR_INVALID_MAC]
+code = 267
+desc = "MAC address was invalid"
+
+[error_map.ESPRESSIF_ERR_NOT_FINISHED]
+code = 268
+desc = "There are items remained to retrieve"
+
+[error_map.ESPRESSIF_ERR_WIFI_BASE]
+code = 12288
+desc = "Starting number of WiFi error codes"
+
+[error_map.ESPRESSIF_ERR_MESH_BASE]
+code = 16384
+desc = "Starting number of MESH error codes"
+
+[error_map.ESPRESSIF_ERR_FLASH_BASE]
+code = 24576
+desc = "Starting number of flash error codes"
+
+[error_map.ESPRESSIF_ERR_HW_CRYPTO_BASE]
+code = 49152
+desc = "Starting number of HW cryptography module error codes"
+
+[error_map.ESPRESSIF_ERR_MEMPROT_BASE]
+code = 53248
+desc = "Starting number of Memory Protection API error codes"
+
+[error_map.MXDBG_ERR_UNKNOWN_TASK]
+code = 16842496
+desc = "Unknown task"
+
+[error_map.MXDBG_ERR_DATA_UNPACK_FAILED]
+code = 16842496
+desc = "Data unpack failed"
+
+[error_map.MXDBG_ERR_DATA_UNPACK_HEADER_ERROR]
+code = 16842497
+desc = "Data unpack header error"
+
+[error_map.MXDBG_ERR_DATA_UNPACK_SEPARATOR_ERROR]
+code = 16842498
+desc = "Data unpack separator error"
+
+[error_map.MXDBG_ERR_USB_RX_DATA_FAILED]
+code = 16842496
+desc = "USB RX data failed"
+
+[error_map.MXDBG_ERR_USB_RX_DATA_TIMEOUT]
+code = 16842498
+desc = "USB RX data timeout"
+
+[error_map.MXDBG_ERR_USB_RX_DATA_HEADER_ERROR]
+code = 16842499
+desc = "USB RX data header error"
+
+[error_map.MXDBG_ERR_PWM_RUN_ALREADY]
+code = 16779009
+desc = "PWM is running already."
+
+[error_map.MXDBG_ERR_PWM_STOP_ALREADY]
+code = 16779010
+desc = "PWM is stopped already."
+
+[error_map.MXDBG_ERR_PWM_CONFIG_FAILED]
+code = 16779264
+desc = "PWM config failed"
+
+[error_map.MXDBG_ERR_PWM_INVALID_CHANNEL]
+code = 16779265
+desc = "Invalid PWM channel"
+
+[error_map.MXDBG_ERR_PWM_INVALID_PARAMS]
+code = 16779266
+desc = "Invalid PWM parameters"
+
+[error_map.MXDBG_ERR_PWM_INVALID_DUTY_CYCLES]
+code = 16779266
+desc = "Invalid PWM duty cycles"
+
+[error_map.MXDBG_ERR_SPI_READ_IMAGE_FAILED]
+code = 16779520
+desc = "SPI read image failed"
+
+[error_map.MXDBG_ERR_I2C_INIT_FAILED]
+code = 16777728
+desc = "I2C init failed"
+
+[error_map.MXDBG_ERR_I2C_DEINIT_FAILED]
+code = 16777729
+desc = "I2C deinit failed"
+
+[error_map.MXDBG_ERR_I2C_INVALID_OPERATION]
+code = 16777474
+desc = "Invalid I2C operation"
+
+[error_map.MXDBG_ERR_I2C_WRITE_READ_FAILED]
+code = 16777475
+desc = "I2C write read failed"
+
+[error_map.MXDBG_ERR_I2C_WRITE_FAILED]
+code = 16777476
+desc = "I2C write failed"
+
+[error_map.MXDBG_ERR_I2C_READ_FAILED]
+code = 16777477
+desc = "I2C read failed"
+
+[error_map.MXDBG_ERR_SPI_INIT_FAILED]
+code = 16778752
+desc = "SPI init failed"
+
+[error_map.MXDBG_ERR_SPI_DEINIT_FAILED]
+code = 16778753
+desc = "SPI deinit failed"
+
+[error_map.MXDBG_ERR_SPI_INVALID_OPERATION]
+code = 16778498
+desc = "Invalid SPI operation"
+
+[error_map.MXDBG_ERR_SPI_READ_LEN_TOO_LONG]
+code = 16778499
+desc = "SPI read length too long"
+
+[error_map.MXDBG_ERR_SPI_TRANSACTION_FAILED]
+code = 16778500
+desc = "SPI transaction failed"
+
+[error_map.MXDBG_ERR_GPIO_CONFIG_FAILED]
+code = 16778240
+desc = "GPIO config failed"

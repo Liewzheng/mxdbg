@@ -26,6 +26,7 @@ typedef enum {
     TASK_PWM_CONFIG = 8,
     TASK_SPI_READ_IMAGE = 9,
     TASK_USB_CONFIG = 0xF0,
+    TASK_RESET_DEVICE = 0xF1,
 } task_cmd_t;
 
 /*-----------------------------------------------------------------------------

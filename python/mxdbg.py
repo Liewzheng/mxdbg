@@ -8,40 +8,55 @@
 * Ltd.
 '''
 
-try:
-
-    from loguru import logger
-except ImportError:
-    print("Please install loguru package.Try 'pip install loguru'.")
-    raise ImportError
-
+import subprocess
 import ctypes
 from types import MappingProxyType
 import time
-import toml
 import re
 import os, sys
+
+try:
+    from loguru import logger
+except ImportError:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "loguru"])
+        from loguru import logger
+    except Exception as e:
+        print(f"Failed to install loguru package: {e}")
+        raise ImportError
+
+try:
+    import toml
+except ImportError:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "toml"])
+        import toml
+    except Exception as e:
+        logger.error(f"Failed to install toml package: {e}")
+        raise ImportError
 
 try:
     from serial import Serial
     import serial.tools.list_ports
 except ImportError:
-    print("Please install pyserial package.Try 'pip install pyserial'.")
-    raise ImportError
-
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pyserial"])
+        from serial import Serial
+        import serial.tools.list_ports
+    except Exception as e:
+        logger.error(f"Failed to install pyserial package: {e}")
+        raise ImportError
 
 class MXDBG:
 
     def __init__(self, *args, **kwargs):
-        self._client = None
-        self._last_execute_time = None
-        self.pwm_run_state = False
-
-        self._crc_enable = True
+        self.__client = None
+        self.__pwm_states = [False, False, False]
+        self.__crc_enable = True
+        self.__mxdbg_header_file = None
+        self.__mxdbg_toml_path = None
         
-        self._mxdbg_header_file = None
-        self.mxdbg_toml_path = None
-        self.version, self.task_cmd, self.error_map = self._parse_and_map()
+        self.version, self.task_cmd, self.__error_map = self.__parse_and_map()
 
         __constants_gpio_mode__ = {
             "GPIO_MODE_DISABLE": 0,
@@ -104,121 +119,127 @@ class MXDBG:
 
         self.spi_device = MappingProxyType(__constants_spi_device__)
 
-        self._all_valid_pins = [-1, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        self.__all_valid_pins = [-1, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                                 14, 15, 16, 17, 18, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]
-        self._pwm_used_pins = [16, 17, 18]
-        self._i2c_used_pins = [10, 11]
-        self._spi_used_pins = [12, 13, 14, 15]
-        self._gpio_used_pins = set()
+        self.__pwm_used_pins = [16, 17, 18]
+        self.__i2c_used_pins = [10, 11]
+        self.__spi_used_pins = [12, 13, 14, 15]
+        self.__gpio_used_pins = set()
 
-        self._gpio_valid_pins = None
-        self._i2c_valid_pins = None
-        self._spi_valid_pins = None
-        self._pwm_valid_pins = None
+        self.__gpio_valid_pins = None
+        self.__i2c_valid_pins = None
+        self.__spi_valid_pins = None
+        self.__pwm_valid_pins = None
         
-        self.pca9557pw_addr = 0x18
+        self.__pca9557pw_addr = 0x18
+        self.__tca9555pwr_addr = 0x20
+        self.__extboard_version = None
         
-        self._expand_io_init_status = False
-        self._power_init_status = False
-        self._expand_io_mode_bitmask = 0x00
+        self.__expand_io_init_status = False
+        self.__power_init_status = False
+        self.__expand_io_mode_bitmask = 0x0000
 
-        self.connect(**kwargs)        
+        self.connect(**kwargs)
+        
+        self.power_init()
 
     @property
     def pwm_valid_pins(self):
-        if self._pwm_valid_pins is None:
-            self._pwm_valid_pins = list(set(self._all_valid_pins) - set(self._gpio_used_pins) -
-                                        set(self._spi_used_pins) - set(self._i2c_used_pins))
-        return self._pwm_valid_pins
+        if self.__pwm_valid_pins is None:
+            self.__pwm_valid_pins = list(set(self.__all_valid_pins) - set(self.__gpio_used_pins) -
+                                        set(self.__spi_used_pins) - set(self.__i2c_used_pins))
+        return self.__pwm_valid_pins
 
     @property
     def i2c_valid_pins(self):
-        if self._i2c_valid_pins is None:
-            self._i2c_valid_pins = list(set(self._all_valid_pins) - set(self._pwm_used_pins) -
-                                        set(self._spi_used_pins) - set(self._gpio_used_pins))
-        return self._i2c_valid_pins
+        if self.__i2c_valid_pins is None:
+            self.__i2c_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
+                                        set(self.__spi_used_pins) - set(self.__gpio_used_pins))
+        return self.__i2c_valid_pins
 
     @property
     def spi_valid_pins(self):
-        if self._spi_valid_pins is None:
-            self._spi_valid_pins = list(set(self._all_valid_pins) - set(self._pwm_used_pins) -
-                                        set(self._i2c_used_pins) - set(self._gpio_used_pins))
-        return self._spi_valid_pins
+        if self.__spi_valid_pins is None:
+            self.__spi_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
+                                        set(self.__i2c_used_pins) - set(self.__gpio_used_pins))
+        return self.__spi_valid_pins
 
     @property
     def gpio_valid_pins(self):
-        if self._gpio_valid_pins is None:
-            self._gpio_valid_pins = list(set(self._all_valid_pins) - set(self._pwm_used_pins) -
-                                         set(self._spi_used_pins) - set(self._i2c_used_pins))
-        return self._gpio_valid_pins
+        if self.__gpio_valid_pins is None:
+            self.__gpio_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
+                                         set(self.__spi_used_pins) - set(self.__i2c_used_pins))
+        return self.__gpio_valid_pins
 
-    def mark_pwm_used(self, pin):
+    def __mark_pwm_used(self, pin):
 
         if pin == -1:
             logger.warning("PWM is not supported to set pin to -1.")
             return
 
         if pin in self.pwm_valid_pins:
-            self._pwm_used_pins.append(pin)
-            self._pwm_valid_pins = None
+            self.__pwm_used_pins.append(pin)
+            self.__pwm_valid_pins = None
         else:
             raise ValueError(f'Pin {pin} is not a valid PWM pin or already used by other module.')
 
-    def mark_i2c_used(self, pin):
+    def __mark_i2c_used(self, pin):
 
         if pin == -1:
             logger.warning("I2C is not supported to set pin to -1.")
             return
 
         if pin in self.i2c_valid_pins:
-            self._i2c_used_pins.append(pin)
-            self._i2c_valid_pins = None
+            self.__i2c_used_pins.append(pin)
+            self.__i2c_valid_pins = None
         else:
             raise ValueError(f'Pin {pin} is not a valid I2C pin or already used by other module.')
 
-    def mark_spi_used(self, pin):
+    def __mark_spi_used(self, pin):
 
         if pin == -1:
             return
 
         if pin in self.spi_valid_pins:
-            self._spi_used_pins.append(pin)
-            self._spi_valid_pins = None
+            self.__spi_used_pins.append(pin)
+            self.__spi_valid_pins = None
         else:
             raise ValueError(f'Pin {pin} is not a valid SPI pin or already used by other module.')
 
-    def mark_gpio_used(self, pin):
+    def __mark_gpio_used(self, pin):
 
         if pin == -1:
             logger.warning("GPIO is not supported to set pin to -1.")
             return
 
         if pin in self.gpio_valid_pins:
-            self._gpio_used_pins.add(pin)
-            self._gpio_valid_pins = None
+            self.__gpio_used_pins.add(pin)
+            self.__gpio_valid_pins = None
         else:
             raise ValueError(f'Pin {pin} is not a valid GPIO pin or already used by other module.')
 
     def mark_pin_free(self, pin):
         '''
-        check all the used pins if the pin was in it, then remove it.
+        @brief check all the used pins if the pin was in it, then remove it.
+        @param pin: pin number. `-1` is not supported. 
         '''
 
         if pin == -1:
-            return
+            logger.warning("Pin is not supported to be set as -1.")
+            raise ValueError("Pin is not supported to be set as -1.")
 
-        if pin in self._gpio_used_pins:
-            self._gpio_used_pins.remove(pin)
-            self._gpio_valid_pins = None
-        elif pin in self._spi_used_pins:
-            self._spi_used_pins.remove(pin)
-            self._spi_valid_pins = None
-        elif pin in self._i2c_used_pins:
-            self._i2c_used_pins.remove(pin)
-            self._i2c_valid_pins = None
-        elif pin in self._pwm_used_pins:
-            self._pwm_used_pins.remove(pin)
-            self._pwm_valid_pins = None
+        if pin in self.__gpio_used_pins:
+            self.__gpio_used_pins.remove(pin)
+            self.__gpio_valid_pins = None
+        elif pin in self.__spi_used_pins:
+            self.__spi_used_pins.remove(pin)
+            self.__spi_valid_pins = None
+        elif pin in self.__i2c_used_pins:
+            self.__i2c_used_pins.remove(pin)
+            self.__i2c_valid_pins = None
+        elif pin in self.__pwm_used_pins:
+            self.__pwm_used_pins.remove(pin)
+            self.__pwm_valid_pins = None
         else:
             raise ValueError(f'Pin {pin} is not used by any module. Or it is not a valid pin.')
 
@@ -245,8 +266,11 @@ class MXDBG:
                 raise ValueError("No device found.")
 
         try:
+            if sys.platform != 'win32':
+                _port = f"/dev/{_port}"
+            
             # use serial port to connect
-            self._client = Serial(_port, 115200, timeout=5, write_timeout=1, **kwargs)
+            self.__client = Serial(_port, 115200, timeout=5, write_timeout=1, **kwargs)
             logger.info("Using serial port to connect. Port: {}".format(_port))
 
         except Exception as e:
@@ -255,9 +279,9 @@ class MXDBG:
         logger.info("Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
 
     def disconnect(self):
-        self._client.close()
+        self.__client.close()
 
-    def read(self, timeout=2):
+    def __read(self, timeout=2):
 
         data = bytearray()
         start_time = time.time()
@@ -271,47 +295,41 @@ class MXDBG:
                 else:
                     raise TimeoutError("Data read timeout. Data received: {}".format(data))
 
-            if self._client.in_waiting > 0:
+            if self.__client.in_waiting > 0:
 
-                temp_data = self._client.read(self._client.in_waiting)
+                temp_data = self.__client.read(self.__client.in_waiting)
                 data += temp_data
 
             if len(data) >= 5:
-                if self.check_crc(data) and (data[:5] == bytearray("mxdbg", "utf-8")):
+                if self.__check_crc(data) and (data[:5] == bytearray("mxdbg", "utf-8")):
                     break
 
             time.sleep(0.01)
 
         return data
 
-    def write(self, data):
-        self._client.write(data)
+    def __write(self, data):
+        self.__client.write(data)
 
-    def task_execute(self, cmd, data: list):
+    def __task_execute(self, cmd, data: list):
 
-        write_data = self.data_pack(cmd, data)
-
-        # self._client.flushInput()
-        # self._client.flushOutput()
-
-        # logger.debug("Write Data: {}".format(["{:02X} ".format(d) for d in list(write_data)]))
+        write_data = self.__data_pack(cmd, data)
 
         try:
-            self.write(write_data)
-            self._last_execute_time = time.time()
+            self.__write(write_data)
         except Exception as e:
             raise ValueError(f"Failed to write data: {e}")
 
-        read_data = self.read()
+        read_data = self.__read()
 
-        ret, temp_data = self.data_unpack(cmd, read_data)
+        ret, temp_data = self.__data_unpack(cmd, read_data)
 
         return ret, temp_data
 
-    def data_decompose(self, data: int, bytes_num: int = 4) -> tuple:
+    def __data_decompose(self, data: int, bytes_num: int = 4) -> tuple:
         return [(data >> (8 * (bytes_num - 1 - i))) & 0xFF for i in range(bytes_num)]
 
-    def hexdump(self, data: bytearray, base_address=0x3fc9900c):
+    def __hexdump(self, data: bytearray, base_address=0x3fc9900c):
         logger.debug('hex:')
 
         # 按行分组数据，每行16字节
@@ -328,9 +346,9 @@ class MXDBG:
             ascii_repr = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in line_data)
             print("|{}|".format(ascii_repr))
 
-    def calculate_crc(self, data: bytearray) -> bytearray:
+    def __calculate_crc(self, data: bytearray) -> bytearray:
         '''
-        @brief: Calculate CRC16 for the given data.
+        @brief Calculate CRC16 for the given data.
         @param data: Data to calculate CRC16.
         @return: CRC16 value.
         '''
@@ -346,25 +364,25 @@ class MXDBG:
 
         return bytearray([high, low])
 
-    def check_crc(self, data: bytearray) -> bool:
+    def __check_crc(self, data: bytearray) -> bool:
         '''
-        @brief: Check CRC16 for the given data.
+        @brief Check CRC16 for the given data.
         @param data: Data to check CRC16.
         @return: True if CRC16 is correct, False otherwise.
         '''
 
-        if (self._crc_enable == False):
+        if (self.__crc_enable == False):
             return True
 
-        high, low = self.calculate_crc(data[:-2])
+        high, low = self.__calculate_crc(data[:-2])
 
         # logger.debug(f"CRC Check: {high}, {low}, {data[-2]}, {data[-1]}")
 
         return True if ((high == data[-2]) and (low == data[-1])) else False
 
-    def data_pack(self, cmd: int, data: list) -> bool:
+    def __data_pack(self, cmd: int, data: list) -> bool:
         '''
-        @brief: Package data with header and CRC16.
+        @brief Package data with header and CRC16.
         @param data: Data to package.
         '''
 
@@ -379,14 +397,14 @@ class MXDBG:
         temp_data += bytearray(data)
         temp_data += bytearray(":", "utf-8")
 
-        high, low = self.calculate_crc(temp_data)
+        high, low = self.__calculate_crc(temp_data)
         temp_data += bytearray([high, low])
 
         return temp_data
 
-    def data_unpack(self, cmd, data: bytearray) -> tuple:
+    def __data_unpack(self, cmd, data: bytearray) -> tuple:
         '''
-        @brief: Unpackage data.
+        @brief Unpackage data.
         @param data: Data to unpackage.
         @return: cmd and data.
         '''
@@ -400,7 +418,7 @@ class MXDBG:
 
         # check crc first
         temp_data = data
-        assert self.check_crc(temp_data), "CRC check failed."
+        assert self.__check_crc(temp_data), "CRC check failed."
 
         # check header
         header = data[:5]
@@ -420,7 +438,7 @@ class MXDBG:
 
         return ret, temp_data
     
-    def _parse_version(self, lines):
+    def __parse_version(self, lines):
         """Parse VERSION_MAJOR and VERSION_MINOR from header file."""
         try:
             major_pattern = re.compile(r"#define\s+VERSION_MAJOR\s+(\d+)")
@@ -439,7 +457,7 @@ class MXDBG:
     
         return version_major, version_minor
     
-    def _parse_task_cmd(self, lines):
+    def __parse_task_cmd(self, lines):
         """Parse TASK commands from header file."""
         task_cmd = {}
         try:
@@ -454,7 +472,7 @@ class MXDBG:
             raise ValueError(f"Error parsing task commands: {e}")
         return task_cmd
     
-    def _parse_error_map(self, lines, task_cmd, version_major, version_minor):
+    def __parse_error_map(self, lines, task_cmd, version_major, version_minor):
         """Parse error codes from header file, including MXDBG_ERR and ESPRESSIF_ERR."""
         error_map = {}
         try:
@@ -506,11 +524,11 @@ class MXDBG:
 
         return error_map
 
-    def _compute_error_code(self, version_major, version_minor, task_id, ret_code):
+    def __compute_error_code(self, version_major, version_minor, task_id, ret_code):
         """Compute the error code based on task_id and ret_code."""
         return ((version_major << 24) | (version_minor << 16) | (task_id << 8) | ret_code)
 
-    def _save_to_toml(self, path, version, task_cmd, error_map):
+    def __save_to_toml(self, path, version, task_cmd, error_map):
         """Save parsed data to TOML file with additional annotations for version."""
         try:
             data = {
@@ -525,34 +543,52 @@ class MXDBG:
         except Exception as e:
             raise ValueError(f"Failed to save mxdbg.toml: {e}")
         
-    def _parse_and_map(self):
+    def __parse_and_map(self):
         
         version = 0x00
         task_cmd = {}
         error_map = {}
         
-        if os.path.exists(os.path.join(os.path.dirname(__file__), '../main/mxdbg.h')):
-            self._mxdbg_header_file = os.path.join(os.path.dirname(__file__), '../main/mxdbg.h')
-            self.mxdbg_toml_path = os.path.join(os.path.dirname(__file__), 'mxdbg.toml')
+        header_file = os.path.join(os.path.dirname(__file__), '../main/mxdbg.h')
+        if os.path.exists(header_file):
+            self.__mxdbg_header_file = header_file
+            self.__mxdbg_toml_path = os.path.join(os.path.dirname(__file__), 'mxdbg.toml')
         
         else:
             for f in os.listdir(os.path.dirname(__file__)):
                 if f.endswith('.toml'):
                     if f == 'mxdbg.toml':
-                        self.mxdbg_toml_path = os.path.join(os.path.dirname(__file__), f)
+                        self.__mxdbg_toml_path = os.path.join(os.path.dirname(__file__), f)
                         break
                 elif f.endswith('.h'):
                     if f == 'mxdbg.h':
-                        self._mxdbg_header_file = os.path.join(os.path.dirname(__file__), f)
+                        self.__mxdbg_header_file = os.path.join(os.path.dirname(__file__), f)
                         break
                     
-            if self.mxdbg_toml_path is None and self._mxdbg_header_file is None:
+            if self.__mxdbg_toml_path is None and self.__mxdbg_header_file is None:
                 raise FileNotFoundError("Please provide mxdbg.toml or mxdbg.h file to parse.")
             
-        if self.mxdbg_toml_path:
+        if self.__mxdbg_header_file:
             
             try:
-                with open(self.mxdbg_toml_path, 'r') as f:
+                with open(self.__mxdbg_header_file, 'r') as f:
+                    lines = f.readlines()
+                
+                version_major, version_minor = self.__parse_version(lines)
+                version = {"MAJOR": version_major, "MINOR": version_minor}
+                
+                task_cmd = self.__parse_task_cmd(lines)
+                        
+                error_map = self.__parse_error_map(lines, task_cmd, version_major, version_minor)
+            
+                self.__save_to_toml(self.__mxdbg_toml_path, version, task_cmd, error_map)
+
+            except Exception as e:
+                raise ValueError(f"Failed to parse error map: {e}")
+        
+        else:
+            try:
+                with open(self.__mxdbg_toml_path, 'r') as f:
                     data = toml.load(f)
 
                 version = data.get('version', version)
@@ -562,42 +598,26 @@ class MXDBG:
             except Exception as e:
                 raise ValueError(f"Failed to load mxdbg.toml: {e}")
                     
-        else:
-
-            try:
-                with open(self._mxdbg_header_file, 'r') as f:
-                    lines = f.readlines()
-                
-                version_major, version_minor = self._parse_version(lines)
-                version = {"MAJOR": version_major, "MINOR": version_minor}
-                
-                task_cmd = self._parse_task_cmd(lines)
-                        
-                error_map = self._parse_error_map(lines, task_cmd, version_major, version_minor)
-            
-                self._save_to_toml(self.mxdbg_toml_path, version, task_cmd, error_map)
-
-            except Exception as e:
-                raise ValueError(f"Failed to parse error map: {e}")
 
         return version, task_cmd, error_map
 
-    def check_ret_code(self, cmd:int, ret:int):
+    def __check_ret_code(self, cmd:int, ret:int):
 
         if ret != 0:
 
-            error_code = self._compute_error_code(self.version["MAJOR"], self.version["MINOR"], cmd, ret)
+            error_code = self.__compute_error_code(self.version["MAJOR"], self.version["MINOR"], cmd, ret)
             error_desc = "Unknown error."
-            for key in self.error_map:
-                if self.error_map[key]["code"] == error_code:
-                    error_desc = self.error_map[key]["desc"]
+            for key in self.__error_map:
+                if self.__error_map[key]["code"] == error_code:
+                    error_desc = self.__error_map[key]["desc"]
                     break
             logger.error(f"Error code: 0x{ctypes.c_uint32(error_code).value:08X}, Description: {error_desc}")
 
     def i2c_find_slave(self, port: int = 0):
         
         '''
-        @brief: Find I2C slave devices.
+        @brief Find I2C slave devices.
+        @param port: I2C port number. Default is `0`.
         @return: List of I2C slave devices.
         '''
 
@@ -623,22 +643,31 @@ class MXDBG:
                        port: int = 0,
                        slave_id_10_bit: bool = False):
         '''
-        @brief: Write and read data from I2C slave device. The default I2C pin is SDA: 12, SCL: 11.
-        @param slave_id: I2C slave device address.
-        @param write_list: Data to write to I2C slave device. String, list or bytearray type.
-        @param read_length: Length of data to read from I2C slave device.
-        @param port: I2C port number. Default is 0 or 1.
+        @brief Write and read data from I2C slave device. The default I2C pin is SDA: `10`, SCL: `11`.
+        @param slave_id: I2C slave device address. (e.g., `0x04`.)
+        @param write_list: Data to write to I2C slave device. (It should be a list of bytes. e.g., `[0x00, 0x01]` or `[]`.)
+        @param read_length: Length of data to read from I2C slave device. 
+        @param port: I2C port number.( It should be `0` (in default) or `1`.)
         @param slave_id_10_bit: True if 10-bit slave address, False otherwise.
         @return: Data read from I2C slave device.
         '''
-
-        assert port in [0, 1], "Invalid port number."
-        assert slave_id >= 0x04 and slave_id <= 0x07FF, "Invalid slave id."
+        
+        if port not in [0, 1]:
+            logger.error("Invalid port number, the available port number is 0 or 1.")
+            raise ValueError("Invalid port number, the available port number is 0 or 1.")
+        
+        if slave_id < 0x04 or slave_id > 0x07FF:
+            logger.error("Invalid slave, the available slave id is between 0x04 and 0x07FF.")
+            raise ValueError("Invalid slave, the available slave id is between 0x04 and 0x07FF.")
 
         # 构造要发送的数据包
         slave_id = slave_id if not slave_id_10_bit else slave_id & 0x07FF
         wirte_len = len(write_list)
         read_len = read_length
+        
+        if wirte_len <= 0 and read_len <= 0:
+            logger.error("Write length and read length should be greater than 0.")
+            raise ValueError("Write length and read length should be greater than 0.")
 
         '''
         * value format received:
@@ -656,7 +685,7 @@ class MXDBG:
         i2c_data_temp += write_list
 
         # 执行任务并读取返回的数据
-        ret, data = self.task_execute(self.task_cmd["TASK_I2C_WRITE_READ"], i2c_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_I2C_WRITE_READ"], i2c_data_temp)
 
         data = list(data) if data is not None else None
 
@@ -671,13 +700,13 @@ class MXDBG:
                    sda_pin: int = 10, scl_pin: int = 11,
                    sda_pullup: bool = True, scl_pullup: bool = True):
         '''
-        @brief: Configure I2C port.
-        @param port: I2C port number.
-        @param freq: I2C frequency.
-        @param sda_pin: SDA pin number.
-        @param scl_pin: SCL pin number.
-        @param sda_pullup: SDA pull up resistor. True to enable, False to disable.
-        @param scl_pullup: SCL pull up resistor. True to enable, False to disable.
+        @brief Configure I2C port. ***Please do not modify the configuration of PORT1***.
+        @param port: I2C port number.( It should be `0` (in default) or `1`.)
+        @param freq: I2C frequency. (Default is `400000`.)
+        @param sda_pin: SDA pin number. (Default is `10`.)
+        @param scl_pin: SCL pin number. (Default is `11`.)
+        @param sda_pullup: SDA pull up resistor. (`True`: enable, `False`: disable.)
+        @param scl_pullup: SCL pull up resistor. (`True`: enable, `False`: disable.)
         @return: Return True if success, False otherwise.
         '''
 
@@ -685,12 +714,12 @@ class MXDBG:
             logger.error("Invalid port number.")
             return False
 
-        self._i2c_valid_pins = None
+        self.__i2c_valid_pins = None
 
         if (sda_pin not in self.i2c_valid_pins) or (scl_pin not in self.i2c_valid_pins):
             logger.error("Invalid pin number.")
             return False, None
-        elif sda_pin in self._i2c_used_pins and scl_pin in self._i2c_used_pins:
+        elif sda_pin in self.__i2c_used_pins and scl_pin in self.__i2c_used_pins:
             pass
 
         if sda_pin == scl_pin:
@@ -711,23 +740,23 @@ class MXDBG:
                          (sda_pullup << 4 | scl_pullup)
                          ]
 
-        ret, data = self.task_execute(self.task_cmd["TASK_I2C_CONFIG"], i2c_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_I2C_CONFIG"], i2c_data_temp)
 
         if ret != 0:
             logger.error(f"Error: {ret}")
             return False, None
         else:
-            for pin in self._i2c_used_pins:
+            for pin in self.__i2c_used_pins:
                 self.mark_pin_free(pin)
             for pin in [sda_pin, scl_pin]:
-                self.mark_i2c_used(pin)
+                self.__mark_i2c_used(pin)
             return True, None
 
     def gpio_write_read(self, pin: int, level: int = None):
         '''
-        @brief: Write or read GPIO pin. if level is -1, read mode, otherwise write mode.
+        @brief Write or read GPIO pin. This API will read GPIO's level if you set `level` to `None`, otherwise it will be in write mode.
         @param pin: GPIO pin number.
-        @param level: GPIO level. 0: Low, 1: High. -1 in default.
+        @param level: GPIO level. (`0`: Low, `1`: High. `None` in default.)
         @return: Return True and data if success, False otherwise.
         '''
 
@@ -744,7 +773,7 @@ class MXDBG:
             operation = 0
             gpio_data_temp = [operation, pin, ((ctypes.c_uint8(level).value) & 0x01)]
 
-        ret, data = self.task_execute(self.task_cmd["TASK_GPIO_WRITE_READ"], gpio_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_GPIO_WRITE_READ"], gpio_data_temp)
 
         if ret == 0:
             return True, None if (operation == 0) else data[0]
@@ -752,46 +781,51 @@ class MXDBG:
             logger.error(f"Error: {ret}")
             return False, None
 
-    def gpio_config(self, pin: int, mode: int, pull_up: int, pull_down: int) -> bool:
+    def gpio_config(self, pin: int, mode: int, pull_up: bool, pull_down: bool) -> bool:
         '''
-        @brief: Configure GPIO pin.
+        @brief Configure GPIO pin.
         @param pin: GPIO pin number.
-        @param mode: GPIO mode. 0x00: Disable, 0x01: Input, 0x02: Output, 0x03: Input/Output, 0x06: Output Open Drain, 0x07: Input/Output Open Drain
-        @param pull_up: Pull up resistor. 0x00: Disable, 0x01: Enable.
-        @param pull_down: Pull down resistor. 0x00: Disable, 0x01: Enable.
+        @param mode: GPIO mode. (`0x00`: Disable, `0x01`: Input, `0x02`: Output, `0x03`: Input/Output, `0x06`: Output Open Drain, `0x07`: Input/Output Open Drain)
+        @param pull_up: Pull up resistor. (`True`: Enable, `False`: Disable.)
+        @param pull_down: Pull down resistor. (`True`: Enable, `False`: Disable.)
         @return: Return value. 0: Success, other: Error.
         '''
 
-        self._gpio_valid_pins = None
+        self.__gpio_valid_pins = None
 
         if pin not in self.gpio_valid_pins:
             logger.error("Invalid pin number.")
-            return False, None
+            raise ValueError("Invalid pin number.")
+        
+        # assert mode in self.gpio_mode, "Invalid mode."
+        if mode not in [v for k, v in self.gpio_mode.items()]:
+            logger.error("Invalid mode.")
+            raise ValueError("Invalid mode.")
 
         pin = ctypes.c_uint8(pin).value
         mode = ctypes.c_uint8(mode).value
-        pull_up = ctypes.c_uint8(pull_up).value
-        pull_down = ctypes.c_uint8(pull_down).value
+        pull_up = ctypes.c_uint8(0x01 if pull_up else 0x00).value
+        pull_down = ctypes.c_uint8(0x01 if pull_down else 0x00).value
 
         gpio_data_temp = [pin, mode, pull_up, pull_down]
-        ret, data = self.task_execute(self.task_cmd["TASK_GPIO_CONFIG"], gpio_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_GPIO_CONFIG"], gpio_data_temp)
 
         if ret != 0:
             logger.error(f"Error: {ret}")
             return False
         else:
-            self.mark_gpio_used(pin)
+            self.__mark_gpio_used(pin)
             return True
 
     def spi_write_read(self, write_list: list, read_length: int):
         '''
-        @brief: Write and read data from SPI slave device. The default SPI pins are MISO: 12, MOSI: 13, SCLK: 14, CS: 15.
-        @param write_list: Data to write to SPI slave device. List type.
+        @brief Write and read data from SPI slave device. (The default SPI pins are MISO: `12`, MOSI: `13`, SCLK: `14`, CS: `15`.)
+        @param write_list: Data to write to SPI slave device. (It should be a list of bytes. e.g., `[0x00, 0x01]` or `[]`.)
         @param read_length: Length of data to read from SPI slave device.
         @return: Data read from SPI slave device.
         '''
 
-        write_len = ctypes.c_uint32(len(write_list)).value
+        write_len = ctypes.c_uint32(len(write_list)).values
         read_len = ctypes.c_uint32(read_length).value
 
         if (write_len == 0) and (read_len == 0):
@@ -808,9 +842,9 @@ class MXDBG:
                          (read_len & 0x0000FF00) >> 8, (read_len & 0x000000FF) >> 0]
         spi_data_temp += write_list
 
-        ret, data = self.task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp)
 
-        self.check_ret_code(self.task_cmd["TASK_SPI_WRITE_READ"], ret)
+        self.__check_ret_code(self.task_cmd["TASK_SPI_WRITE_READ"], ret)
 
         if ret == 0:
             if read_len == 0:
@@ -841,38 +875,38 @@ class MXDBG:
                    queue_size: int = 7,
                    ):
         '''
-        @brief: Configure SPI.
-        @param miso_io_num: MISO pin number. Default is 12. Set to -1 if not used.
-        @param mosi_io_num: MOSI pin number. Default is 13. 
-        @param sclk_io_num: SCLK pin number. Default is 14.
-        @param cs_io_num: CS pin number. Default is 15. Set to -1 if not used.
-        @param quadwp_io_num: QUADWP pin number. Default is -1.
-        @param quadhd_io_num: QUADHD pin number. Default is -1.
-        @param data4_io_num: DATA4 pin number. Default is -1.
-        @param data5_io_num: DATA5 pin number. Default is -1.
-        @param data6_io_num: DATA6 pin number. Default is -1.
-        @param data7_io_num: DATA7 pin number. Default is -1.
-        @param max_transfer_sz: Maximum transfer size. Default is 4096.
-        @param common_bus_flags: Common bus flags. Default is 0.
-        @param isr_cpu_id: ISR CPU ID. Default is 0.
-        @param intr_flags: Interrupt flags. Default is 0.
-        @param command_bits: Command bits. Default is 0.
-        @param address_bits: Address bits. Default is 0.
-        @param dummy_bits: Dummy bits. Default is 0.
-        @param mode: SPI mode. Default is 3. Available values are 0, 1, 2, 3.
-        @param duty_cycle_pos: Duty cycle position. Default is 0.
-        @param cs_ena_pretrans: CS enable pretrans. Default is 0.
-        @param cs_ena_posttrans: CS enable posttrans. Default is 0.
-        @param freq: SPI frequency. Default is 1000000.
-        @param input_delay_ns: Input delay in ns. Default is 0.
-        @param device_interface_flags: Device interface flags. Default is 0. Set (SPI_DEVICE_HALFDUPLEX | SPI_DEVICE_3WIRE) if 3-wired half duplex mode.
-        @param queue_size: Queue size. Default is 7.
+        @brief Configure SPI.
+        @param miso_io_num: MISO pin number. (Default is `12`. Set to `-1` if not used.)
+        @param mosi_io_num: MOSI pin number. (Default is `13`.)
+        @param sclk_io_num: SCLK pin number.( Default is `14`.)
+        @param cs_io_num: CS pin number. (Default is 15. Set to `-1` if not used.)
+        @param quadwp_io_num: QUADWP pin number. (Default is `-1`.)
+        @param quadhd_io_num: QUADHD pin number. (Default is `-1`.)
+        @param data4_io_num: DATA4 pin number. (Default is `-1`.)
+        @param data5_io_num: DATA5 pin number. (Default is `-1`.)
+        @param data6_io_num: DATA6 pin number. (Default is `-1`.)
+        @param data7_io_num: DATA7 pin number. (Default is `-1`.)
+        @param max_transfer_sz: Maximum transfer size. (Default is `4096`.)
+        @param common_bus_flags: Common bus flags. (Default is `0`.)
+        @param isr_cpu_id: ISR CPU ID. (Default is `0`.)
+        @param intr_flags: Interrupt flags. (Default is `0`.)
+        @param command_bits: Command bits. (Default is `0`.)
+        @param address_bits: Address bits. (Default is `0`.)
+        @param dummy_bits: Dummy bits. (Default is `0`.)
+        @param mode: SPI mode. (Default is `3`. Available values are `0`, `1`, `2`, `3`.)
+        @param duty_cycle_pos: Duty cycle position. (Default is `0`.)
+        @param cs_ena_pretrans: CS enable pretrans. (Default is `0`.)
+        @param cs_ena_posttrans: CS enable posttrans. (Default is `0`.)
+        @param freq: SPI frequency. (Default is `1000000`.)
+        @param input_delay_ns: Input delay in ns. (Default is `0`.)
+        @param device_interface_flags: Device interface flags. (Default is `0`. Set `(SPI_DEVICE_HALFDUPLEX | SPI_DEVICE_3WIRE)` if 3-wired half duplex mode.
+        @param queue_size: Queue size. Default is `7`.)
         @return: Return True if success, False otherwise.
         '''
 
         for pin in [mosi_io_num, miso_io_num, sclk_io_num, cs_io_num, quadhd_io_num, quadwp_io_num,
                     data4_io_num, data5_io_num, data6_io_num, data7_io_num]:
-            if pin != -1 and ((pin not in self.spi_valid_pins) and (pin not in self._spi_used_pins)):
+            if pin != -1 and ((pin not in self.spi_valid_pins) and (pin not in self.__spi_used_pins)):
                 logger.error(f"Invalid pin number: {pin}")
                 return False, None
 
@@ -881,54 +915,54 @@ class MXDBG:
         assert isr_cpu_id in [0, 1, 2], "Invalid ISR CPU ID."
 
         spi_config_data_temp = []
-        spi_config_data_temp.extend(self.data_decompose(mosi_io_num))
-        spi_config_data_temp.extend(self.data_decompose(miso_io_num))
-        spi_config_data_temp.extend(self.data_decompose(sclk_io_num))
-        spi_config_data_temp.extend(self.data_decompose(quadwp_io_num))
-        spi_config_data_temp.extend(self.data_decompose(quadhd_io_num))
-        spi_config_data_temp.extend(self.data_decompose(data4_io_num))
-        spi_config_data_temp.extend(self.data_decompose(data5_io_num))
-        spi_config_data_temp.extend(self.data_decompose(data6_io_num))
-        spi_config_data_temp.extend(self.data_decompose(data7_io_num))
-        spi_config_data_temp.extend(self.data_decompose(max_transfer_sz, 2))
-        spi_config_data_temp.extend(self.data_decompose(common_bus_flags))
-        spi_config_data_temp.extend(self.data_decompose(isr_cpu_id, 1))
-        spi_config_data_temp.extend(self.data_decompose(intr_flags))
-        spi_config_data_temp.extend(self.data_decompose(command_bits, 1))
-        spi_config_data_temp.extend(self.data_decompose(address_bits, 1))
-        spi_config_data_temp.extend(self.data_decompose(dummy_bits, 1))
-        spi_config_data_temp.extend(self.data_decompose(mode, 1))
-        spi_config_data_temp.extend(self.data_decompose(duty_cycle_pos, 2))
-        spi_config_data_temp.extend(self.data_decompose(cs_ena_pretrans, 2))
-        spi_config_data_temp.extend(self.data_decompose(cs_ena_posttrans, 1))
-        spi_config_data_temp.extend(self.data_decompose(freq))
-        spi_config_data_temp.extend(self.data_decompose(input_delay_ns))
-        spi_config_data_temp.extend(self.data_decompose(cs_io_num))
-        spi_config_data_temp.extend(self.data_decompose(device_interface_flags))
-        spi_config_data_temp.extend(self.data_decompose(queue_size))
+        spi_config_data_temp.extend(self.__data_decompose(mosi_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(miso_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(sclk_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(quadwp_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(quadhd_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(data4_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(data5_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(data6_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(data7_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(max_transfer_sz, 2))
+        spi_config_data_temp.extend(self.__data_decompose(common_bus_flags))
+        spi_config_data_temp.extend(self.__data_decompose(isr_cpu_id, 1))
+        spi_config_data_temp.extend(self.__data_decompose(intr_flags))
+        spi_config_data_temp.extend(self.__data_decompose(command_bits, 1))
+        spi_config_data_temp.extend(self.__data_decompose(address_bits, 1))
+        spi_config_data_temp.extend(self.__data_decompose(dummy_bits, 1))
+        spi_config_data_temp.extend(self.__data_decompose(mode, 1))
+        spi_config_data_temp.extend(self.__data_decompose(duty_cycle_pos, 2))
+        spi_config_data_temp.extend(self.__data_decompose(cs_ena_pretrans, 2))
+        spi_config_data_temp.extend(self.__data_decompose(cs_ena_posttrans, 1))
+        spi_config_data_temp.extend(self.__data_decompose(freq))
+        spi_config_data_temp.extend(self.__data_decompose(input_delay_ns))
+        spi_config_data_temp.extend(self.__data_decompose(cs_io_num))
+        spi_config_data_temp.extend(self.__data_decompose(device_interface_flags))
+        spi_config_data_temp.extend(self.__data_decompose(queue_size))
 
-        self.hexdump(spi_config_data_temp)
+        self.__hexdump(spi_config_data_temp)
 
-        ret, data = self.task_execute(self.task_cmd["TASK_SPI_CONFIG"], spi_config_data_temp)
-        self.check_ret_code(self.task_cmd["TASK_SPI_CONFIG"], ret)
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_CONFIG"], spi_config_data_temp)
+        self.__check_ret_code(self.task_cmd["TASK_SPI_CONFIG"], ret)
 
         if ret == 0:
-            for pin in self._spi_used_pins:
+            for pin in self.__spi_used_pins:
                 self.mark_pin_free(pin)
             for pin in [mosi_io_num, miso_io_num, sclk_io_num, cs_io_num, quadhd_io_num, quadwp_io_num,
                         data4_io_num, data5_io_num, data6_io_num, data7_io_num]:
-                self.mark_spi_used(pin)
+                self.__mark_spi_used(pin)
             return True, None
         else:
             return False, None
 
     def spi_read_image(self):
         '''
-        @brief: Read image data from SPI slave device.
+        @brief Read image data from SPI slave device.
         @return: Image data.
         '''
 
-        ret, data = self.task_execute(self.task_cmd["TASK_SPI_READ_IMAGE"], [])
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_READ_IMAGE"], [])
 
         if ret == 0:
             return True, data
@@ -937,7 +971,7 @@ class MXDBG:
 
     def pwm_run_stop(self, pwm_running_state: bool, channel: int = 0):
         '''
-        @brief: Run or stop PWM. It will generate a PWM signal with 10KHz frequency and 25% duty cycle in default.
+        @brief Run or stop PWM. It will generate a PWM signal with 10KHz frequency and 25% duty cycle in default.
         @param pwm_running_state: True to run PWM, False to stop PWM.
         @param channel: PWM channel. Default is 0. Available channels are 0, 1, 2.
         @return: Return True if success, False otherwise.
@@ -949,28 +983,28 @@ class MXDBG:
 
         channel = ctypes.c_uint8(channel).value
         run_state = ctypes.c_uint8(pwm_running_state).value
-        ret, data = self.task_execute(self.task_cmd["TASK_PWM_RUN_STOP"], [channel, run_state])
+        ret, data = self.__task_execute(self.task_cmd["TASK_PWM_RUN_STOP"], [channel, run_state])
 
-        self.check_ret_code(self.task_cmd["TASK_PWM_RUN_STOP"], ret)
+        self.__check_ret_code(self.task_cmd["TASK_PWM_RUN_STOP"], ret)
 
         if pwm_running_state:
-            self.pwm_run_state = True
+            self.__pwm_states[channel] = True
         else:
-            self.pwm_run_state = False
+            self.__pwm_states[channel] = False
 
-        return self.pwm_run_state, ret
+        return self.__pwm_states[channel], ret
 
     def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0, resolution_hz: int = 80000000):
         '''
-        @brief: Configure PWM.
-        @param pin: PWM pin number. pin of Channel 0: 16 (in default); pin of Channel 1: 17 (in default); pin of Channel 2: 18 (in default).
-        @param freq: PWM frequency. Unit: Hz; Default is 10000 (10KHz). Frequency should be far less than timer resolution.
-        @param duty: PWM duty cycle. Default is 0.5 (50%). Duty cycle should be in the range of 0.0 (0%) to 1.0 (100%).
-        @param channel: PWM channel. Default is 0. Available channels are 0, 1, 2.
+        @brief Configure PWM.
+        @param pin: PWM pin number. (Channel 0: `16` (in default); Channel 1: `17` (in default); Channel 2: `18` (in default).)
+        @param freq: PWM frequency. Unit: Hz; (Default is `10000` (10KHz). Frequency should be far less than timer resolution.)
+        @param duty: PWM duty cycle. (Default is `0.5` (50%). Duty cycle should be in the range of `0.0` (0%) to `1.0` (100%).)
+        @param channel: PWM channel. (Default is `0`. Available channels are `0`, `1`, `2`.)
         @return: Return True if success, False otherwise.
         '''
 
-        self._pwm_valid_pins = None
+        self.__pwm_valid_pins = None
 
         if pin not in self.pwm_valid_pins:
             logger.error("Invalid pin number.")
@@ -1008,33 +1042,33 @@ class MXDBG:
                          (timer_resolution & 0x0000FF00) >> 8, timer_resolution & 0x000000FF
                          ]
 
-        ret, _ = self.task_execute(self.task_cmd["TASK_PWM_CONFIG"], pwm_data_temp)
+        ret, _ = self.__task_execute(self.task_cmd["TASK_PWM_CONFIG"], pwm_data_temp)
 
-        self.check_ret_code(self.task_cmd["TASK_PWM_CONFIG"], ret)
+        self.__check_ret_code(self.task_cmd["TASK_PWM_CONFIG"], ret)
 
         if ret == 0:
-            self._pwm_used_pins = [pin]
+            self.__pwm_used_pins = [pin]
 
-        if self.pwm_run_state:
+        if self.__pwm_states[channel]:
             self.pwm_run_stop(True, channel)
 
-        for pin in self._pwm_used_pins:
+        for pin in self.__pwm_used_pins:
             self.mark_pin_free(pin)
-        self.mark_pwm_used(pin)
+        self.__mark_pwm_used(pin)
 
         return True, None
 
     def usb_config(self, crc_enable: bool = False):
         '''
-        @brief: Configure USB.
-        @param crc_enable: True to enable CRC, False to disable CRC.
+        @brief Configure USB.
+        @param crc_enable: (`True`: enable CRC, `False`: disable CRC.)
         @return: Return True if success, False otherwise.
         '''
 
         crc_enable = ctypes.c_uint8(crc_enable).value
-        self._crc_enable = crc_enable
+        self.__crc_enable = crc_enable
 
-        ret, data = self.task_execute(self.task_cmd["TASK_USB_CONFIG"], [crc_enable])
+        ret, data = self.__task_execute(self.task_cmd["TASK_USB_CONFIG"], [crc_enable])
 
         if ret == 0:
             return True, None
@@ -1044,31 +1078,62 @@ class MXDBG:
     def power_init(self):
         
         '''
-        @brief: Initialize power.
+        @brief Initialize power.
         @return: Return True if success, False otherwise.
         '''
 
-        if not self._expand_io_init_status:
-            self.expand_io_init()
-            
-        if not self._power_init_status:
-            
-            ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x03], 1, port=1)
+        if not self.__expand_io_init_status:
+            ret = self.expand_io_init()
             if ret is not True:
-                logger.error("PCA9557PW read failed.")
-                raise ValueError("PCA9557PW read failed.")
+                return False
             
-            bit_mask = data[0]
-
-            bit_mask &= 0xE1 # 1110 0001
+        if not self.__power_init_status:
             
-            ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x03, bit_mask], 0, port=1)
-            if ret is not True:
-                logger.error("PCA9557PW write failed.")
-                raise ValueError("PCA9557PW write failed.")
+            match self.__extboard_version:
+                
+                case "v0.1":
+                    
+                    # set IO1 to IO3 as output
+                    
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x03], 1, port=1)
+                    if ret is not True:
+                        logger.error("PCA9557PW read failed.")
+                        raise ValueError("PCA9557PW read failed.")
+                    
+                    bit_mask = data[0]
+                    bit_mask &= 0xE1 # 1110 0001
+                    
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x03, bit_mask], 0, port=1)
+                    if ret is not True:
+                        logger.error("PCA9557PW write failed.")
+                        raise ValueError("PCA9557PW write failed.")
+                    
+                    self.__expand_io_mode_bitmask = bit_mask
+                    self.__power_init_status = True
+                
+                case "v0.2.1":
+                
+                    ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x06], 2, port=1)
+                    if ret is not True:
+                        logger.error("TCA9555PWR read failed.")
+                        raise ValueError("TCA9555PWR read failed.")
+                    
+                    bit_mask = data[1] << 8 | data[0]
+                    bit_mask &= 0xFC00 # 1111 1100 0000 0000
+                    
+                    ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x06, bit_mask & 0x00FF, (bit_mask & 0xFF00) >> 8], 0, port=1)
+                    if ret is not True:
+                        logger.error("TCA9555PWR write failed.")
+                        raise ValueError("TCA9555PWR write failed.")
+                    
+                    self.__expand_io_mode_bitmask = bit_mask
+                    self.__power_init_status = True
+                
+                case _:
+                    
+                    logger.error("Invalid extension board version.")
+                    raise ValueError("Invalid extension board version.")
             
-            self._expand_io_mode_bitmask = bit_mask
-            self._power_init_status = True
         else:
             logger.info("Power already initialized.")
         
@@ -1077,169 +1142,513 @@ class MXDBG:
     def power_control(self, communication_type:str="SPI", power_type:str='1V8'):
         
         '''
-        @brief: Control power for communication type.
-        @param communication_type: Communication type. SPI or I2C.
-        @param power_type: Power type. 1V8, 1V2 or 0V.
+        @brief Control power for communication type.
+        @param communication_type: Communication types which are supported to use level shifter. (`SPI` or `I2C` are available.)
+        @param power_type: Power types which are supported to swich power. (`1V8`, `1V2` or `0V` are supported in ***Extboard v0.1***, while `3V3`, `1V8`, `1V2` or `0V` are supported in ***Extboard v0.2.1***.)
         @return: Return True if success, False otherwise.
         '''
         
         communication_type = communication_type.upper()
         power_type = power_type.upper()
         
-        if communication_type not in ["SPI", "I2C"]:
-            logger.error("Invalid communication type. Only SPI and I2C are supported.")
-            return False
-        
-        if power_type not in ["1V8", "1V2", "0V"]:
-            logger.error("Invalid power type. Only 1V8, 1V2 and 0V are supported.")
-            return False
-        
-        ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x01], 1, port=1)
-        if ret is not True:
-            logger.error("PCA9557PW read failed.")
-            raise ValueError("PCA9557PW read failed.")
-        
-        bit_mask = data[0]
-        
-        if communication_type == 'SPI' and power_type == '1V8': # IO3, bit 3
-            bit_mask |= 0x08 # 0000 1000
-            bit_mask &= 0xFD # 1111 1101
-        elif communication_type == 'SPI' and power_type == '1V2': # IO1, bit 1
-            bit_mask |= 0x02 # 0000 0010
-            bit_mask &= 0xF7 # 1111 0111
-        elif communication_type == 'SPI' and power_type == '0V': # set IO3 and IO1 to 0
-            bit_mask &= 0xF5 # 1111 0101
-        elif communication_type == 'I2C' and power_type == '1V8': # IO4, bit 4
-            bit_mask |= 0x10 # 0001 0000
-            bit_mask &= 0xFB # 1111 1011
-        elif communication_type == 'I2C' and power_type == '1V2': # IO2, bit 2
-            bit_mask |= 0x04 # 0000 0100
-            bit_mask &= 0xEF # 1110 1111
-        elif communication_type == 'I2C' and power_type == '0V': # set IO4 and IO2 to 0
-            bit_mask &= 0xEB # 1110 1011
+        match self.__extboard_version:
             
-        ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x01, bit_mask], 0, port=1)
-        if ret is not True:
-            logger.error("PCA9557PW write failed.")
-            raise ValueError("PCA9557PW write failed.")
+            case "v0.1":
+        
+                if communication_type not in ["SPI", "I2C"]:
+                    logger.error("Invalid communication type. Only SPI and I2C are supported.")
+                    return False
+                
+                if power_type not in ["1V8", "1V2", "0V"]:
+                    logger.error("Invalid power type. Only 1V8, 1V2 and 0V are supported.")
+                    return False
+                
+                ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x01], 1, port=1)
+                if ret is not True:
+                    logger.error("PCA9557PW read failed.")
+                    raise ValueError("PCA9557PW read failed.")
+                
+                bit_mask = data[0]
+                
+                match communication_type:
+                    
+                    case "SPI":
+                        
+                        match power_type:
+                            
+                            case "1V8": # IO3, bit 3
+                                
+                                bit_mask |= 0x08 # 0000 1000
+                                bit_mask &= 0xFD # 1111 1101
+                                
+                            case "1V2": # IO1, bit 1
+                                
+                                bit_mask |= 0x02 # 0000 0010
+                                bit_mask &= 0xF7 # 1111 0111
+                                
+                            case "0V": # set IO3 and IO1 to 0
+                                
+                                bit_mask &= 0xF5 # 1111 0101
+                                
+                            case "3V3":
+                                
+                                logger.error("Invalid power type. 3V3 is not supported in Extboard v0.1.")
+                                return False
+                            
+                            case _:
+                                    
+                                logger.error("Invalid power type. Only 1V8, 1V2 and 0V are supported.")
+                                return False
+                    
+                    case "I2C":
+                        
+                        match power_type:
+                            
+                            case "1V8": # IO4, bit 4
+                                
+                                bit_mask |= 0x10 # 0001 0000
+                                bit_mask &= 0xFB # 1111 1011
+                            
+                            case "1V2": # IO2, bit 2
+                                
+                                bit_mask |= 0x04 # 0000 0100
+                                bit_mask &= 0xEF # 1110 1111
+                            
+                            case "0V": # set IO4 and IO2 to 0
+                                
+                                bit_mask &= 0xEB # 1110 1011
+                                
+                            case "3V3":
+                                
+                                logger.error("Invalid power type. 3V3 is not supported in Extboard v0.1.")
+                                return False
+                            
+                            case _:
+                                
+                                logger.error("Invalid power type. Only 1V8, 1V2 and 0V are supported.")
+                                return False
+                    
+                ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x01, bit_mask], 0, port=1)
+                if ret is not True:
+                    logger.error("PCA9557PW write failed.")
+                    raise ValueError("PCA9557PW write failed.")
+                
+            case "v0.2.1":
+                
+                if power_type not in ["3V3", "1V8", "1V2", "0V"]:
+                    logger.error("Invalid power type. Only 3V3, 1V8, 1V2 and 0V are supported.")
+                    return False
+                
+                ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x02], 2, port=1)
+                if ret is not True:
+                    logger.error("TCA9555PWR read failed.")
+                    raise ValueError("TCA9555PWR read failed.")
+                
+                bit_mask = data[1] << 8 | data[0]
+                
+                '''
+                REG 0x02
+                | O 0.7 | O 0.6 | O 0.5   | O 0.4   | O 0.3   | O 0.2   | O 0.1   | O 0.0   |
+                |-------|-------|---------|---------|---------|---------|---------|---------|
+                | 1V8_2 | 1V8_1 | 3V3_I2C | 1V8_I2C | 1V2_I2C | 3V3_SPI | 1V8_SPI | 1V2_SPI |
+                
+                REG 0x03
+                | O 1.7 | O 1.6 | O 1.5 | O 1.4 | O 1.3 | O 1.2 | O 1.1 | O 1.0 |
+                |-------|-------|-------|-------|-------|-------|-------|-------|
+                | IO17  | IO16  | IO15  | IO14  | IO13  | IO12  | 3V3_2 | 3V3_1 |
+                '''
+                
+                match communication_type:
+                    
+                    case "SPI":
+                        
+                        match power_type:
+                            
+                            case "3V3":
+                                
+                                bit_mask |= 0x0004 # 0000 0000 0000 0100
+                                bit_mask &= 0xFFFC # 1111 1111 1111 1100
+                                
+                            case "1V8":
+                                
+                                bit_mask |= 0x0002 # 0000 0000 0000 0010
+                                bit_mask &= 0xFFFA # 1111 1111 1111 1010
+                                
+                            case "1V2":
+                                
+                                bit_mask |= 0x0001 # 0000 0000 0000 0001
+                                bit_mask &= 0xFFF9 # 1111 1111 1111 1001
+                                
+                            case "0V":
+                                
+                                bit_mask &= 0xFFF8 # 1111 1111 1111 1000
+                                
+                            case _:
+                                
+                                logger.error("Invalid power type. Only 3V3, 1V8, 1V2 and 0V are supported.")
+                                return False
+                    
+                    case "I2C":
+                        
+                        match power_type:
+                            
+                            case "3V3":
+                                
+                                bit_mask |= 0x0020 # 0000 0000 0010 0000
+                                bit_mask &= 0xFFE7 # 1111 1111 1110 0111
+                                
+                            case "1V8":
+                                
+                                bit_mask |= 0x0010 # 0000 0000 0001 0000
+                                bit_mask &= 0xFFD7 # 1111 1111 1101 0111
+                                
+                            case "1V2":
+                                
+                                bit_mask |= 0x0008 # 0000 0000 0000 1000
+                                bit_mask &= 0xFFCF # 1111 1111 1100 1111
+                                
+                            case "0V":
+                                
+                                bit_mask &= 0xFFC7 # 1111 1111 1100 0111
+                                
+                            case _:
+                                
+                                logger.error("Invalid power type. Only 3V3, 1V8, 1V2 and 0V are supported.")
+                                return False
+                    
+                    case _:
+                        
+                        logger.error("Invalid communication type. Only SPI and I2C are supported.")
+                        return False
+                    
+                ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x02, bit_mask & 0x00FF, (bit_mask & 0xFF00) >> 8], 0, port=1)
+                if ret is not True:
+                    logger.error("TCA9555PWR write failed.")
+                    raise ValueError("TCA9555PWR write failed.")
+            
+            case _:
+                
+                logger.error("Invalid extension board version.")
+                raise ValueError("Invalid extension board version.")
         
         return True
     
     def expand_io_init(self):
         
         '''
-        @brief: Initialize expand IO.
+        @brief Initialize expand IO.
         @return: Return True if success, False otherwise.
         '''
         
-        ret, data = self.i2c_find_slave(port=1)
+        ret, board_version = self.get_extboard_version()
         if ret is not True:
-            logger.error("I2C find slave failed.")
-            raise ValueError("I2C find slave failed.")
+            return False
         
-        if self.pca9557pw_addr not in [int(slave_id, 16) for slave_id in data]:
-            logger.error("PCA9557PW not found.")
-            raise ValueError("PCA9557PW not found.")
-        
-        if not self._expand_io_init_status:
-        
-            reg_list = [
-                [0x02, 0x00], # set all pins as normal polarity
-                [0x03, 0xFF], # set all pins as input mode
-                [0x01, 0x00],
-            ]
+        if not self.__expand_io_init_status:
             
-            for reg in reg_list:
-                ret, data = self.i2c_write_read(self.pca9557pw_addr, reg, 0, port=1)
-                if ret != True:
-                    logger.error("PCA9557PW init failed.")
-                    raise ValueError("PCA9557PW init failed.")
+            if board_version == "v0.1":
+        
+                reg_list = [
+                    [0x02, 0x00], # set all pins as normal polarity
+                    [0x03, 0xFF], # set all pins as input mode
+                    [0x01, 0x00], # set all pins as low level
+                ]
                 
-            self._expand_io_init_status = True
-            self._expand_io_mode_bitmask = 0xFF
+                for reg in reg_list:
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, reg, 0, port=1)
+                    if ret != True:
+                        logger.error("PCA9557PW init failed.")
+                        raise ValueError("PCA9557PW init failed.")
+                    
+                self.__expand_io_mode_bitmask = 0xFF
             
+            elif board_version == "v0.2.1":
+                
+                reg_list = [
+                    [0x06, 0xFF, 0xFF], # set all pins as input mode
+                    [0x04, 0x00, 0x00], # disable polarity inversion
+                    [0x02, 0x00, 0x00], # set all pins as low level
+                ]
+                
+                for reg in reg_list:
+                    reg, data = self.i2c_write_read(self.__tca9555pwr_addr, reg, 0, port=1)
+                    if ret != True:
+                        logger.error("TCA9555PWR init failed.")
+                        raise ValueError("TCA9555PWR init failed.")
+                    
+                self.__expand_io_mode_bitmask = 0xFFFF
+        
+        self.__expand_io_init_status = True
         return True
             
     def expand_io_config(self, pin: int, mode: int):
         
         '''
-        @brief: Configure expand IO pin mode.
-        @param pin: Pin number. Only 0, 5, 6, 7 are supported.
-        @param mode: Pin mode. 0: Input, 1: Output.
+        @brief Configure expand IO pin mode.
+        @param pin: Expanded pin number on ExtBoard. (`IO0`, `IO5`, `IO6`, `IO7` are supported in ***Extboard v0.1***, while `IO6` (`1V8_1`), `IO7` (`1V8_2`), `IO10`(`3V3_1`), `IO11`(`3V3_2`), `IO12`, `IO13`, `IO14`, `IO15`, `IO16`, `IO17` are supported in ***Extboard v0.2.1***.)
+        @param mode: Pin mode. `0`: Input, `1`: Output.
         '''
-        
-        if pin not in [0, 5, 6, 7]:
-            raise ValueError("Invalid pin number. Only 0, 5, 6, 7 are supported.")
         
         if mode not in [0, 1]:
             raise ValueError("Invalid mode. Only 0 and 1 are supported.")
         
-        if not self._expand_io_init_status:
+        if not self.__expand_io_init_status:
             self.expand_io_init()
+
+        match self.__extboard_version:
             
-        ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x03], 1, port=1)
-        if ret is not True:
-            logger.error("PCA9557PW read failed.")
-            raise ValueError("PCA9557PW read failed.")
-    
-        bit_mask = data[0]
-        bit_mask = (bit_mask & ~(1 << pin)) if mode == 1 else (bit_mask | (1 << pin))
-        
-        ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x03, bit_mask], 0, port=1)
-        if ret is not True:
-            logger.error("PCA9557PW write failed.")
-            raise ValueError("PCA9557PW write failed.")
-        
-        self._expand_io_mode_bitmask = bit_mask
+            case "v0.1":
+            
+                if pin not in [0, 5, 6, 7]:
+                    raise ValueError("Invalid pin number. Only 0, 5, 6, 7 are supported.")
+                
+                ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x03], 1, port=1)
+                if ret is not True:
+                    logger.error("PCA9557PW read failed.")
+                    raise ValueError("PCA9557PW read failed.")
+            
+                bit_mask = data[0]
+                bit_mask = (bit_mask & ~(1 << pin)) if mode == 1 else (bit_mask | (1 << pin))
+                
+                ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x03, bit_mask], 0, port=1)
+                if ret is not True:
+                    logger.error("PCA9557PW write failed.")
+                    raise ValueError("PCA9557PW write failed.")
+                
+                self.__expand_io_mode_bitmask = bit_mask
+                
+            case "v0.2.1":
+                
+                '''
+                REG 0x02
+                | O 0.7      | O 0.6      | O 0.5   | O 0.4   | O 0.3   | O 0.2   | O 0.1   | O 0.0   |
+                |------------|------------|---------|---------|---------|---------|---------|---------|
+                | (IO7)1V8_2 | (IO6)1V8_1 | 3V3_I2C | 1V8_I2C | 1V2_I2C | 3V3_SPI | 1V8_SPI | 1V2_SPI |
+                
+                REG 0x03
+                | O 1.7 | O 1.6 | O 1.5 | O 1.4 | O 1.3 | O 1.2 | O 1.1 | O 1.0 |
+                |-------|-------|-------|-------|-------|-------|-------|-------|
+                | IO17  | IO16  | IO15  | IO14  | IO13  | IO12  | 3V3_2 | 3V3_1 |
+                '''
+                
+                if pin not in [12, 13, 14, 15, 16, 17]:
+                    raise ValueError("Invalid pin number. Only 12, 13, 14, 15, 16, 17 are supported.")
+                    
+                ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x06], 2, port=1)
+                if ret is not True:
+                    logger.error("TCA9555PWR read failed.")
+                    raise ValueError("TCA9555PWR read failed.")
+                
+                bit_mask = data[1] << 8 | data[0]
+                if pin > 7:
+                    pin -= 2
+                    
+                bit_mask = (bit_mask & ~(1 << pin)) if mode == 1 else (bit_mask | (1 << pin))
+                
+                ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x06, bit_mask & 0x00FF, (bit_mask & 0xFF00) >> 8], 0, port=1)
+                if ret is not True:
+                    logger.error("TCA9555PWR write failed.")
+                    raise ValueError("TCA9555PWR write failed.")
+                
+                self.__expand_io_mode_bitmask = bit_mask
+            
+            case _:
+                
+                logger.error("Invalid extension board version.")
+                raise ValueError("Invalid extension board version.")
         
         return True
         
     
-    def expand_io_write_read(self, pin: int, level: int = None):
+    def expand_io_write_read(self, pin: any, level: int = None):
         
         '''
-        @brief: Write or read level of expand IO pin.
-        @param pin: Pin number. Only 0, 5, 6, 7 are supported.
-        @param level: Level to write. 0: Low, 1: High. None in default for read mode.
+        @brief Write or read level of expand IO pin.
+        @param pin: Expanded pin number on ExtBoard. (`IO0`, `IO5`, `IO6`, `IO7` are supported in ***Extboard v0.1***, while `IO6` (`1V8_1`), `IO7` (`1V8_2`), `IO10`(`3V3_1`), `IO11`(`3V3_2`), `IO12`, `IO13`, `IO14`, `IO15`, `IO16`, `IO17` are supported in ***Extboard v0.2.1***.)
+        @param level: Level to write. `0`: Low, `1`: High. None in default for read mode.
         '''
-        
-        if pin not in [0, 5, 6, 7]:
-            raise ValueError("Invalid pin number. Only 0, 5, 6, 7 are supported.")
         
         if level not in [0, 1] and level != None:
             raise ValueError("Invalid level. Only 0 and 1 are supported.")
-        
-        # read level
-        if level == None:
+
+        match self.__extboard_version:
             
-            ret, data = self.i2c_write_read(self.pca9557pw_addr, 
-                                            [0x00] if (self._expand_io_mode_bitmask >> pin) & 0x01 == 1 else [0x01], 
-                                            1, port=1)
-            if ret is not True:
-                logger.error("PCA9557PW read failed.")
-                raise ValueError("PCA9557PW read failed.")
-            
-            return True, level_
-        
-        # write level
-        else:
-            
-            if self._expand_io_mode_bitmask >> pin & 0x01 == 1:
-                raise ValueError("Pin is in input mode. Use expand_io_config() to set pin to output mode first.")
-            
-            ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x00], 1, port=1)
-            if ret is not True:
-                logger.error("PCA9557PW read failed.")
-                raise ValueError("PCA9557PW read failed.")
-            
-            if level == 1:
-                bit_mask = data[0] | (1 << pin)
-            else:
-                bit_mask = data[0] & ~(1 << pin)
+            case "v0.1":
                 
-            ret, data = self.i2c_write_read(self.pca9557pw_addr, [0x01, bit_mask], 0, port=1)
-            if ret is not True:
-                logger.error("PCA9557PW write failed.")
-                raise ValueError("PCA9557PW write failed.")
+                expand_pin_mapping = {
+                    "IO0": 0,
+                    "IO5": 5,
+                    "IO6": 6,
+                    "IO7": 7,
+                }
+                
+                if isinstance(pin, str):
+                    pin = pin.upper()
+                    
+                    if pin not in expand_pin_mapping.keys():
+                        raise ValueError("Invalid pin number. Only IO0, IO5, IO6, IO7 are supported.")
+                    else:
+                        pin = expand_pin_mapping[pin]
+        
+                if pin not in [0, 5, 6, 7]:
+                    raise ValueError("Invalid pin number. Only 0, 5, 6, 7 are supported.")
+                
+                # read level
+                if level == None:
+                    
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, 
+                                                    [0x00] if (self.__expand_io_mode_bitmask >> pin) & 0x01 == 1 else [0x01], 
+                                                    1, port=1)
+                    if ret is not True:
+                        logger.error("PCA9557PW read failed.")
+                        raise ValueError("PCA9557PW read failed.")
+                    
+                    level_ = (data[0] >> pin) & 0x01
+                    
+                    return True, level_
+                
+                # write level
+                else:
+                    
+                    if self.__expand_io_mode_bitmask >> pin & 0x01 == 1:
+                        raise ValueError("Pin is in input mode. Use expand_io_config() to set pin to output mode first.")
+                    
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x00], 1, port=1)
+                    if ret is not True:
+                        logger.error("PCA9557PW read failed.")
+                        raise ValueError("PCA9557PW read failed.")
+                    
+                    if level == 1:
+                        bit_mask = data[0] | (1 << pin)
+                    else:
+                        bit_mask = data[0] & ~(1 << pin)
+                        
+                    ret, data = self.i2c_write_read(self.__pca9557pw_addr, [0x01, bit_mask], 0, port=1)
+                    if ret is not True:
+                        logger.error("PCA9557PW write failed.")
+                        raise ValueError("PCA9557PW write failed.")
+                    
+                    return True, None
+                
+            case "v0.2.1":
+                
+                expand_pin_mapping = {
+                    "IO6": 6,
+                    "IO7": 7,
+                    "IO10": 10,
+                    "IO11": 11,
+                    "IO12": 12,
+                    "IO13": 13,
+                    "IO14": 14,
+                    "IO15": 15,
+                    "IO16": 16,
+                    "IO17": 17,
+                    "1V8_1": 6,
+                    "1V8_2": 7,
+                    "3V3_1": 10,
+                    "3V3_2": 11
+                }
+                
+                if isinstance(pin, str):
+                    pin = pin.upper()
+                    
+                    if pin not in expand_pin_mapping.keys():
+                        raise ValueError("Invalid pin number. Only IO6, IO7, IO10, IO11, IO12, IO13, IO14, IO15, IO16, IO17, 1V8_1, 1V8_2, 3V3_1, 3V3_2 are supported.")
+                    else:
+                        pin = expand_pin_mapping[pin]
+                
+                if pin not in [6, 7, 10, 11, 12, 13, 14, 15, 16, 17]:
+                    raise ValueError("Invalid pin number. Only 6, 7, 10, 11, 12, 13, 14, 15, 16, 17 are supported.")
+                
+                if pin > 7:
+                    pin -= 2
+                
+                # read level
+                if level == None:
+                    
+                    ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x00], 2, port=1)
+                    if ret is not True:
+                        logger.error("TCA9555PWR read failed.")
+                        raise ValueError("TCA9555PWR read failed.")
+                    
+                    level_ = (data[1] << 8 | data[0]) >> pin & 0x01
+                    
+                    return True, level_
+                
+                # write level
+                else:
+                    if self.__expand_io_mode_bitmask >> pin & 0x01 == 1:
+                        raise ValueError("Pin is in input mode. Use expand_io_config() to set pin to output mode first.")
+                    
+                    ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x00], 2, port=1)
+                    if ret is not True:
+                        logger.error("TCA9555PWR read failed.")
+                        raise ValueError("TCA9555PWR read failed.")
+                    
+                    if level == 1:
+                        bit_mask = (data[1] << 8 | data[0]) | (1 << pin)
+                    else:
+                        bit_mask = (data[1] << 8 | data[0]) & ~(1 << pin)
+                        
+                    ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x02, bit_mask & 0x00FF, (bit_mask & 0xFF00) >> 8], 0, port=1)
+                    if ret is not True:
+                        logger.error("TCA9555PWR write failed.")
+                        raise ValueError("TCA9555PWR write failed.")
+                    
+                    return True, None
             
-            return True, None
+            case _:
+                
+                logger.error("Invalid extension board version.")
+                raise ValueError("Invalid extension board version.")
+            
+        
+    def restart(self):
+        
+        '''
+        @brief Restart the device.
+        '''
+        
+        ret, data = self.__task_execute(self.task_cmd["TASK_RESET_DEVICE"], [])
+        if ret != 0:
+            logger.error("Restart failed.")
+            raise ValueError("Restart failed.")
+
+        return True
+    
+    def get_extboard_version(self):
+        
+        '''
+        @brief Get extension board version.
+        @return: Extension board version.
+        '''
+        
+        ret, data = self.i2c_find_slave(port=1)
+        if ret is not True:
+            
+            # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BUG FIXED FOR v0.2.1 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+            ret, data = self.i2c_config(port=1, freq=400000, sda_pin=41, scl_pin=42, sda_pullup=False, scl_pullup=False)
+            if ret is not True:
+                logger.error("I2C config failed.")
+                raise ValueError("I2C config failed.")
+            
+            ret, data = self.i2c_find_slave(port=1)
+            if ret is not True:
+                logger.info("No extension board found.")
+                return False, None
+            # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BUG FIXED FOR v0.2.1 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+        
+        if self.__pca9557pw_addr in [int(i, 16) for i in data]:
+            self.__extboard_version = "v0.1"
+            logger.info("Extension board version: v0.1")
+
+        elif self.__tca9555pwr_addr in [int(i, 16) for i in data]:
+            self.__extboard_version = "v0.2.1"
+            logger.info("Extension board version: v0.2.1")
+            
+        else:
+            logger.error("Unknown extension board.")
+            return False, None
+        
+        return True, self.__extboard_version
+        

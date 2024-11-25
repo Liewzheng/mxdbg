@@ -87,6 +87,7 @@ SemaphoreHandle_t semaphore_usb_total_rx_size;
 SemaphoreHandle_t semaphore_spi_read_image;
 
 SemaphoreHandle_t semaphore_usb_config;
+SemaphoreHandle_t semaphore_reset_device;
 
 // USB
 
@@ -677,6 +678,11 @@ void task_duty_call(void *pvParameters)
                 case TASK_USB_CONFIG:
 
                     xSemaphoreGive(semaphore_usb_config);
+                    break;
+
+                case TASK_RESET_DEVICE:
+
+                    xSemaphoreGive(semaphore_reset_device);
                     break;
 
                 default:
@@ -1562,6 +1568,11 @@ void app_main()
         ESP_LOGE(TAG, "Failed to create semaphore_usb_config");
     }
 
+    semaphore_reset_device = xSemaphoreCreateBinary();
+    if (semaphore_reset_device == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_reset_device");
+    }
+
     xTaskCreate(task_duty_call, "task_duty_call", 4096, NULL, 5, NULL);
     xTaskCreate(task_notify, "task_notify", 4096, NULL, 6, NULL);
 
@@ -1584,6 +1595,23 @@ void app_main()
     // ESP_LOGI(TAG, "Free DMA heap size: %d bytes", heap_caps_get_free_size(MALLOC_CAP_DMA));
 
     while (1) {
+
+        if (xSemaphoreTake(semaphore_reset_device, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGW(TAG, "Reset device");
+
+            pwm_deinit(&(pwm_channels[0]));
+            pwm_deinit(&(pwm_channels[1]));
+            pwm_deinit(&(pwm_channels[2]));
+
+            spi_deinit();
+            i2c_deinit(0);
+            i2c_deinit(1);
+
+            data_pack(NULL, 0, TASK_RESET_DEVICE, 0);
+            xSemaphoreGive(semaphore_task_notify);
+
+            esp_restart();
+        }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 

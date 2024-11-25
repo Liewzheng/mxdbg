@@ -825,7 +825,7 @@ class MXDBG:
         @return: Data read from SPI slave device.
         '''
 
-        write_len = ctypes.c_uint32(len(write_list)).values
+        write_len = ctypes.c_uint32(len(write_list)).value
         read_len = ctypes.c_uint32(read_length).value
 
         if (write_len == 0) and (read_len == 0):

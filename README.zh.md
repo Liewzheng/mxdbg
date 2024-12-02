@@ -210,6 +210,10 @@ from mxdbg import MXDBG
 # 创建一个 MXDBG 对象
 dev = MXDBG()
 
+# 扩展 IO 初始化
+ret = dev.expand_io_init()
+print(ret)
+
 # 设置 IO 模式
 dev.expand_io_config(7, 0) # 设置 IO7 为输入，0: 输入，1: 输出
 
@@ -232,6 +236,9 @@ from mxdbg import MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
+
+# power init
+dev.power_init()
 
 # 控制 SPI/I2C Level Shifter 的电源
 dev.power_control(communication_type="I2C", power_type="0V") # communication_type: "SPI" / "I2C" ; power_type: "0V" / "1V2" / "1V8"
@@ -288,6 +295,10 @@ from mxdbg import MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
+
+# expand io init
+ret = dev.expand_io_init()
+print(ret)
 
 # the power resource pins has 3 ways to control, just as follows.
 

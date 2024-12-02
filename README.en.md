@@ -196,6 +196,9 @@ from mxdbg import MXDBG
 # Create a MXDBG object
 dev = MXDBG()
 
+# expand io init
+dev.expand_io_init()
+
 # Set the IO mode
 dev.expand_io_config(7, 0) # Set the IO7 as input, 0: input, 1: output
 
@@ -216,6 +219,9 @@ from mxdbg import MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
+
+# power init
+dev.power_init()
 
 # Set the power of SPI/I2C Level Shifter
 dev.power_control(communication_type="I2C", power_type="0V") # communication_type: "SPI" / "I2C" ; power_type: "0V" / "1V2" / "1V8"
@@ -271,6 +277,10 @@ from mxdbg import MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
+
+# expand io init
+ret = dev.expand_io_init()
+print(ret)
 
 # the power resource pins has 3 ways to control, just as follows.
 

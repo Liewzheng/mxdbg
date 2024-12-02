@@ -140,8 +140,6 @@ class MXDBG:
         self.__expand_io_mode_bitmask = 0x0000
 
         self.connect(**kwargs)
-        
-        self.power_init()
 
     @property
     def pwm_valid_pins(self):
@@ -276,7 +274,7 @@ class MXDBG:
         except Exception as e:
             raise ValueError(f"Failed to connect: {e}")
         
-        logger.info("Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
+        logger.info("Using ESP32-S3R8. Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
 
     def disconnect(self):
         self.__client.close()
@@ -1014,6 +1012,10 @@ class MXDBG:
             logger.error("Invalid duty cycle. Duty cycle should be in the range of 0.0 to 1.0")
             return False, None
 
+        if resolution_hz > 80_000_000:
+            logger.error("Invalid timer resolution. Timer resolution should be less than 80MHz.")
+            return False, None
+
         timer_resolution = resolution_hz
 
         if freq > timer_resolution:
@@ -1628,6 +1630,7 @@ class MXDBG:
             
             # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BUG FIXED FOR v0.2.1 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
             ret, data = self.i2c_config(port=1, freq=400000, sda_pin=41, scl_pin=42, sda_pullup=False, scl_pullup=False)
+            logger.info("I2C config for extension board.")
             if ret is not True:
                 logger.error("I2C config failed.")
                 raise ValueError("I2C config failed.")

@@ -17,6 +17,11 @@ import time
 from types import MappingProxyType
 
 try:
+    from mxdbg.__version__ import __version__
+except ImportError:
+    raise("import mxdbg.__version__ failed.")
+
+try:
     from loguru import logger
 except ImportError:
     try:
@@ -275,7 +280,9 @@ class MXDBG:
         except Exception as e:
             raise ValueError(f"Failed to connect: {e}")
         
-        logger.info("Using ESP32-S3R8. Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
+        logger.info("Using ESP32-S3R8.")
+        logger.info("Embedded software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
+        logger.info(f"Library version: {__version__}.")
 
     def disconnect(self) -> None:
         self.__client.close()

@@ -294,11 +294,11 @@ class MXDBG:
         }
         try:
             agent.send(service_owner="SV",
-                            service_name="mxDBG",
-                            service_decription="mxDBG basic service",
-                            period_sec=-1,
-                            kpi=payload_kpi,
-                            debug=True)
+                       service_name="mxDBG",
+                       service_description="mxDBG basic service",
+                       period_sec=-1,
+                       kpi=payload_kpi,
+                       debug=True)
         except ValueError as e:
             logger.error(e)
 

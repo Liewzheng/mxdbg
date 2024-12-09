@@ -10,6 +10,9 @@ dependencies = [
     "toml>=0.10.2",
     "pyserial>=3.5",
 
+    # internal package
+    "mxalfredheartbeatagent>=241201.0rc1",
+
     # for testing
     "isort>=5.13.2",
     "mkdocs>=1.6.0",

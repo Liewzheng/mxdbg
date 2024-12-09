@@ -22,6 +22,11 @@ except ImportError:
     raise("import mxdbg.__version__ failed.")
 
 try:
+    from mxAlfredHeartbeatAgent import agent
+except ImportError:
+    raise ImportError("Failed to import mxAlfredHeartbeatAgent.")
+
+try:
     from loguru import logger
 except ImportError:
     try:
@@ -283,6 +288,19 @@ class MXDBG:
         logger.info("Using ESP32-S3R8.")
         logger.info("Embedded software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
         logger.info(f"Library version: {__version__}.")
+                             
+        payload_kpi =  {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())  # 时间戳
+        }
+        try:
+            id = agent.send(service_owner="SV",
+                            service_name="mxDBG",
+                            service_decription="mxDBG basic service",
+                            period_sec=-1,
+                            kpi=payload_kpi,
+                            debug=True)
+        except ValueError as e:
+            logger.error(e)
 
     def disconnect(self) -> None:
         self.__client.close()

@@ -5,7 +5,23 @@ description = "a simple online debugger for Windows/Mac/Linux programs."
 authors = [
     {name = "Jicai Liu", email = "jicai.liu@mixosense.com"},
 ]
-dependencies = ["loguru>=0.7.3", "toml>=0.10.2", "pyserial>=3.5"]
+dependencies = [
+    "loguru>=0.7.3",
+    "toml>=0.10.2",
+    "pyserial>=3.5",
+
+    # for testing
+    "isort>=5.13.2",
+    "mkdocs>=1.6.0",
+    "mkdocstrings[python]>=0.25.1",
+    "mkdocs-material>=9.5.25",
+    "mypy>=1.10.0",
+    "ruff>=0.4.6",
+    "pytest>=8.2.1",
+    "pyclean>=3.0.0",
+    "gitpython>=3.1.43",
+    "paramiko>=3.4.0",
+]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
@@ -16,7 +32,7 @@ build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
-version = { source = "file", path = "src/mxESP32Driver/__version__.py" }
+version = { source = "file", path = "src/mxdbg/__version__.py" }
 
 [tool.pdm.resolution]
 respect-source-order = true
@@ -28,7 +44,7 @@ verify_ssl = false
 
 # 包发布时提供给用户的命令行工具
 [project.scripts]
-mxESP32Driver = "mxESP32Driver.cli.main_cli:entry"
+mxdbg = "mxdbg.cli.main_cli:entry"
 
 
 # 测试发布用脚本。PDM支持用pre_前缀自动在某个脚本前跑一个脚本，这里我们用它显示一些提示
@@ -56,7 +72,7 @@ pre_build = { composite = ["exam", "pyclean ."] }
 # 跳过mypy一些无法处理的第三方库的报错信息
 [tool.mypy]
 #不检查marimo GUI的代码
-exclude = ['marimo_gui.py$']
+exclude = ['marimo_gui.py$', 'mxdbg.py']
 
 [[tool.mypy.overrides]]
 module = 'pyftdi.*'

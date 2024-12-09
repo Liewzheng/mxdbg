@@ -8,12 +8,13 @@
 * Ltd.
 '''
 
-import subprocess
 import ctypes
-from types import MappingProxyType
-import time
+import os
 import re
-import os, sys
+import subprocess
+import sys
+import time
+from types import MappingProxyType
 
 try:
     from loguru import logger
@@ -36,13 +37,13 @@ except ImportError:
         raise ImportError
 
 try:
-    from serial import Serial
     import serial.tools.list_ports
+    from serial import Serial
 except ImportError:
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyserial"])
-        from serial import Serial
         import serial.tools.list_ports
+        from serial import Serial
     except Exception as e:
         logger.error(f"Failed to install pyserial package: {e}")
         raise ImportError
@@ -142,34 +143,34 @@ class MXDBG:
         self.connect(**kwargs)
 
     @property
-    def pwm_valid_pins(self):
+    def pwm_valid_pins(self) -> list:
         if self.__pwm_valid_pins is None:
             self.__pwm_valid_pins = list(set(self.__all_valid_pins) - set(self.__gpio_used_pins) -
                                         set(self.__spi_used_pins) - set(self.__i2c_used_pins))
         return self.__pwm_valid_pins
 
     @property
-    def i2c_valid_pins(self):
+    def i2c_valid_pins(self) -> list:
         if self.__i2c_valid_pins is None:
             self.__i2c_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
                                         set(self.__spi_used_pins) - set(self.__gpio_used_pins))
         return self.__i2c_valid_pins
 
     @property
-    def spi_valid_pins(self):
+    def spi_valid_pins(self) -> list:
         if self.__spi_valid_pins is None:
             self.__spi_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
                                         set(self.__i2c_used_pins) - set(self.__gpio_used_pins))
         return self.__spi_valid_pins
 
     @property
-    def gpio_valid_pins(self):
+    def gpio_valid_pins(self) -> list:
         if self.__gpio_valid_pins is None:
             self.__gpio_valid_pins = list(set(self.__all_valid_pins) - set(self.__pwm_used_pins) -
                                          set(self.__spi_used_pins) - set(self.__i2c_used_pins))
         return self.__gpio_valid_pins
 
-    def __mark_pwm_used(self, pin):
+    def __mark_pwm_used(self, pin:int) -> None:
 
         if pin == -1:
             logger.warning("PWM is not supported to set pin to -1.")
@@ -181,7 +182,7 @@ class MXDBG:
         else:
             raise ValueError(f'Pin {pin} is not a valid PWM pin or already used by other module.')
 
-    def __mark_i2c_used(self, pin):
+    def __mark_i2c_used(self, pin:int) -> None:
 
         if pin == -1:
             logger.warning("I2C is not supported to set pin to -1.")
@@ -193,7 +194,7 @@ class MXDBG:
         else:
             raise ValueError(f'Pin {pin} is not a valid I2C pin or already used by other module.')
 
-    def __mark_spi_used(self, pin):
+    def __mark_spi_used(self, pin:int) -> None:
 
         if pin == -1:
             return
@@ -204,7 +205,7 @@ class MXDBG:
         else:
             raise ValueError(f'Pin {pin} is not a valid SPI pin or already used by other module.')
 
-    def __mark_gpio_used(self, pin):
+    def __mark_gpio_used(self, pin:int) -> None:
 
         if pin == -1:
             logger.warning("GPIO is not supported to set pin to -1.")
@@ -216,7 +217,7 @@ class MXDBG:
         else:
             raise ValueError(f'Pin {pin} is not a valid GPIO pin or already used by other module.')
 
-    def mark_pin_free(self, pin):
+    def mark_pin_free(self, pin:int) -> None:
         '''
         @brief check all the used pins if the pin was in it, then remove it.
         @param pin: pin number. `-1` is not supported. 
@@ -241,7 +242,7 @@ class MXDBG:
         else:
             raise ValueError(f'Pin {pin} is not used by any module. Or it is not a valid pin.')
 
-    def connect(self, **kwargs):
+    def connect(self, **kwargs) -> None:
 
         _port = None
         retry_times = 10
@@ -276,10 +277,10 @@ class MXDBG:
         
         logger.info("Using ESP32-S3R8. Software version: v{}.{}".format(self.version["MAJOR"], self.version["MINOR"]))
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         self.__client.close()
 
-    def __read(self, timeout=2):
+    def __read(self, timeout=2) -> bytearray:
 
         data = bytearray()
         start_time = time.time()
@@ -306,10 +307,10 @@ class MXDBG:
 
         return data
 
-    def __write(self, data):
+    def __write(self, data) -> None:
         self.__client.write(data)
 
-    def __task_execute(self, cmd, data: list):
+    def __task_execute(self, cmd, data: list) -> tuple:
 
         write_data = self.__data_pack(cmd, data)
 
@@ -327,7 +328,8 @@ class MXDBG:
     def __data_decompose(self, data: int, bytes_num: int = 4) -> tuple:
         return [(data >> (8 * (bytes_num - 1 - i))) & 0xFF for i in range(bytes_num)]
 
-    def __hexdump(self, data: bytearray, base_address=0x3fc9900c):
+    def __hexdump(self, data: bytearray, base_address=0x3fc9900c) -> None:
+
         logger.debug('hex:')
 
         # 按行分组数据，每行16字节
@@ -369,7 +371,7 @@ class MXDBG:
         @return: True if CRC16 is correct, False otherwise.
         '''
 
-        if (self.__crc_enable == False):
+        if not self.__crc_enable:
             return True
 
         high, low = self.__calculate_crc(data[:-2])
@@ -436,7 +438,7 @@ class MXDBG:
 
         return ret, temp_data
     
-    def __parse_version(self, lines):
+    def __parse_version(self, lines) -> tuple:
         """Parse VERSION_MAJOR and VERSION_MINOR from header file."""
         try:
             major_pattern = re.compile(r"#define\s+VERSION_MAJOR\s+(\d+)")
@@ -455,7 +457,7 @@ class MXDBG:
     
         return version_major, version_minor
     
-    def __parse_task_cmd(self, lines):
+    def __parse_task_cmd(self, lines) -> dict:
         """Parse TASK commands from header file."""
         task_cmd = {}
         try:
@@ -470,7 +472,7 @@ class MXDBG:
             raise ValueError(f"Error parsing task commands: {e}")
         return task_cmd
     
-    def __parse_error_map(self, lines, task_cmd, version_major, version_minor):
+    def __parse_error_map(self, lines, task_cmd, version_major, version_minor) -> dict:
         """Parse error codes from header file, including MXDBG_ERR and ESPRESSIF_ERR."""
         error_map = {}
         try:
@@ -522,11 +524,11 @@ class MXDBG:
 
         return error_map
 
-    def __compute_error_code(self, version_major, version_minor, task_id, ret_code):
+    def __compute_error_code(self, version_major, version_minor, task_id, ret_code) -> int:
         """Compute the error code based on task_id and ret_code."""
         return ((version_major << 24) | (version_minor << 16) | (task_id << 8) | ret_code)
 
-    def __save_to_toml(self, path, version, task_cmd, error_map):
+    def __save_to_toml(self, path, version, task_cmd, error_map) -> None:
         """Save parsed data to TOML file with additional annotations for version."""
         try:
             data = {
@@ -541,7 +543,7 @@ class MXDBG:
         except Exception as e:
             raise ValueError(f"Failed to save mxdbg.toml: {e}")
         
-    def __parse_and_map(self):
+    def __parse_and_map(self) -> tuple:
         
         version = 0x00
         task_cmd = {}
@@ -599,7 +601,7 @@ class MXDBG:
 
         return version, task_cmd, error_map
 
-    def __check_ret_code(self, cmd:int, ret:int):
+    def __check_ret_code(self, cmd:int, ret:int) -> None:
 
         if ret != 0:
 
@@ -611,7 +613,7 @@ class MXDBG:
                     break
             logger.error(f"Error code: 0x{ctypes.c_uint32(error_code).value:08X}, Description: {error_desc}")
 
-    def i2c_find_slave(self, port: int = 0):
+    def i2c_find_slave(self, port: int = 0) -> tuple:
         
         '''
         @brief Find I2C slave devices.
@@ -623,9 +625,9 @@ class MXDBG:
         for slave_id in range(0x04, 0x7F):
             try:
                 ret, data = self.i2c_write_read(slave_id, [0x00], 0, port=port)
-                if ret == True:
+                if ret:
                     found_device_list.append(slave_id)
-            except:
+            except Exception:
                 continue
 
         if found_device_list != []:
@@ -639,7 +641,7 @@ class MXDBG:
                        write_list: list,
                        read_length: int,
                        port: int = 0,
-                       slave_id_10_bit: bool = False):
+                       slave_id_10_bit: bool = False) -> tuple:
         '''
         @brief Write and read data from I2C slave device. The default I2C pin is SDA: `10`, SCL: `11`.
         @param slave_id: I2C slave device address. (e.g., `0x04`.)
@@ -696,7 +698,7 @@ class MXDBG:
     def i2c_config(self,
                    port: int = 0, freq: int = 400000,
                    sda_pin: int = 10, scl_pin: int = 11,
-                   sda_pullup: bool = True, scl_pullup: bool = True):
+                   sda_pullup: bool = True, scl_pullup: bool = True) -> tuple:
         '''
         @brief Configure I2C port. ***Please do not modify the configuration of PORT1***.
         @param port: I2C port number.( It should be `0` (in default) or `1`.)
@@ -750,7 +752,7 @@ class MXDBG:
                 self.__mark_i2c_used(pin)
             return True, None
 
-    def gpio_write_read(self, pin: int, level: int = None):
+    def gpio_write_read(self, pin: int, level: int = None) -> tuple:
         '''
         @brief Write or read GPIO pin. This API will read GPIO's level if you set `level` to `None`, otherwise it will be in write mode.
         @param pin: GPIO pin number.
@@ -815,7 +817,7 @@ class MXDBG:
             self.__mark_gpio_used(pin)
             return True
 
-    def spi_write_read(self, write_list: list, read_length: int):
+    def spi_write_read(self, write_list: list, read_length: int) -> tuple:
         '''
         @brief Write and read data from SPI slave device. (The default SPI pins are MISO: `12`, MOSI: `13`, SCLK: `14`, CS: `15`.)
         @param write_list: Data to write to SPI slave device. (It should be a list of bytes. e.g., `[0x00, 0x01]` or `[]`.)
@@ -871,7 +873,7 @@ class MXDBG:
                    input_delay_ns: int = 0,
                    device_interface_flags: int = 0,
                    queue_size: int = 7,
-                   ):
+                   ) -> tuple:
         '''
         @brief Configure SPI.
         @param miso_io_num: MISO pin number. (Default is `12`. Set to `-1` if not used.)
@@ -954,7 +956,7 @@ class MXDBG:
         else:
             return False, None
 
-    def spi_read_image(self):
+    def spi_read_image(self) -> tuple:
         '''
         @brief Read image data from SPI slave device.
         @return: Image data.
@@ -967,7 +969,7 @@ class MXDBG:
         else:
             return False, None
 
-    def pwm_run_stop(self, pwm_running_state: bool, channel: int = 0):
+    def pwm_run_stop(self, pwm_running_state: bool, channel: int = 0) -> tuple:
         '''
         @brief Run or stop PWM. It will generate a PWM signal with 10KHz frequency and 25% duty cycle in default.
         @param pwm_running_state: True to run PWM, False to stop PWM.
@@ -977,7 +979,7 @@ class MXDBG:
 
         if channel not in [0, 1, 2]:
             logger.error("Invalid channel number. Available channels are 0, 1, 2.")
-            return False
+            return False, None
 
         channel = ctypes.c_uint8(channel).value
         run_state = ctypes.c_uint8(pwm_running_state).value
@@ -992,7 +994,7 @@ class MXDBG:
 
         return self.__pwm_states[channel], ret
 
-    def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0, resolution_hz: int = 80000000):
+    def pwm_config(self, pin: int = 16, freq: int = 10000, duty: float = 0.5, channel: int = 0, resolution_hz: int = 80000000) -> tuple:
         '''
         @brief Configure PWM.
         @param pin: PWM pin number. (Channel 0: `16` (in default); Channel 1: `17` (in default); Channel 2: `18` (in default).)
@@ -1067,7 +1069,7 @@ class MXDBG:
 
         return True, None
 
-    def usb_config(self, crc_enable: bool = False):
+    def usb_config(self, crc_enable: bool = False) -> tuple:
         '''
         @brief Configure USB.
         @param crc_enable: (`True`: enable CRC, `False`: disable CRC.)
@@ -1084,7 +1086,7 @@ class MXDBG:
         else:
             return False, None
         
-    def power_init(self):
+    def power_init(self) -> bool:
         
         '''
         @brief Initialize power.
@@ -1148,7 +1150,7 @@ class MXDBG:
         
         return True
 
-    def power_control(self, communication_type:str="SPI", power_type:str='1V8'):
+    def power_control(self, communication_type:str="SPI", power_type:str='1V8') -> bool:
         
         '''
         @brief Control power for communication type.
@@ -1342,7 +1344,7 @@ class MXDBG:
         
         return True
     
-    def expand_io_init(self):
+    def expand_io_init(self) -> bool:
         
         '''
         @brief Initialize expand IO.
@@ -1365,7 +1367,7 @@ class MXDBG:
                 
                 for reg in reg_list:
                     ret, data = self.i2c_write_read(self.__pca9557pw_addr, reg, 0, port=1)
-                    if ret != True:
+                    if not ret:
                         logger.error("PCA9557PW init failed.")
                         raise ValueError("PCA9557PW init failed.")
                     
@@ -1381,7 +1383,7 @@ class MXDBG:
                 
                 for reg in reg_list:
                     reg, data = self.i2c_write_read(self.__tca9555pwr_addr, reg, 0, port=1)
-                    if ret != True:
+                    if not ret:
                         logger.error("TCA9555PWR init failed.")
                         raise ValueError("TCA9555PWR init failed.")
                     
@@ -1390,7 +1392,7 @@ class MXDBG:
         self.__expand_io_init_status = True
         return True
             
-    def expand_io_config(self, pin: int, mode: int):
+    def expand_io_config(self, pin: int, mode: int) -> bool:
         
         '''
         @brief Configure expand IO pin mode.
@@ -1469,7 +1471,7 @@ class MXDBG:
         return True
         
     
-    def expand_io_write_read(self, pin: any, level: int = None):
+    def expand_io_write_read(self, pin: any, level: int = None) -> tuple:
         
         '''
         @brief Write or read level of expand IO pin.
@@ -1477,7 +1479,7 @@ class MXDBG:
         @param level: Level to write. `0`: Low, `1`: High. None in default for read mode.
         '''
         
-        if level not in [0, 1] and level != None:
+        if level not in [0, 1] and level is not None:
             raise ValueError("Invalid level. Only 0 and 1 are supported.")
 
         match self.__extboard_version:
@@ -1503,7 +1505,7 @@ class MXDBG:
                     raise ValueError("Invalid pin number. Only 0, 5, 6, 7 are supported.")
                 
                 # read level
-                if level == None:
+                if level is None:
                     
                     ret, data = self.i2c_write_read(self.__pca9557pw_addr, 
                                                     [0x00] if (self.__expand_io_mode_bitmask >> pin) & 0x01 == 1 else [0x01], 
@@ -1573,7 +1575,7 @@ class MXDBG:
                     pin -= 2
                 
                 # read level
-                if level == None:
+                if level is None:
                     
                     ret, data = self.i2c_write_read(self.__tca9555pwr_addr, [0x00], 2, port=1)
                     if ret is not True:
@@ -1612,7 +1614,7 @@ class MXDBG:
                 raise ValueError("Invalid extension board version.")
             
         
-    def restart(self):
+    def restart(self) -> bool:
         
         '''
         @brief Restart the device.
@@ -1625,7 +1627,7 @@ class MXDBG:
 
         return True
     
-    def get_extboard_version(self):
+    def get_extboard_version(self) -> tuple:
         
         '''
         @brief Get extension board version.

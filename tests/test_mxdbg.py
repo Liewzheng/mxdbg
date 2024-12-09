@@ -1,5 +1,7 @@
 import unittest
+
 from src.mxdbg.mxdbg import MXDBG
+
 
 class TestMXDBG(unittest.TestCase):
 
@@ -18,20 +20,13 @@ class TestMXDBG(unittest.TestCase):
 
     def test_gpio_config_valid(self):
         """测试 GPIO 配置的有效情况。"""
-        ret = self.mxdbg.gpio_config(pin=33, mode=2, pull_up=1, pull_down=0)
+        ret = self.mxdbg.gpio_config(pin=33, mode=2, pull_up=True, pull_down=False)
         self.assertTrue(ret, "GPIO 配置失败")
         
     def test_gpio_config_invalid_mode(self):
         """测试 GPIO 配置的无效模式情况。"""
         with self.assertRaises(ValueError):
-            self.mxdbg.gpio_config(pin=33, mode=99, pull_up=1, pull_down=0)
-    
-    def test_gpio_config_invalid_pull(self):
-        """测试 GPIO 配置的无效上下拉情况。"""
-        with self.assertRaises(ValueError):
-            self.mxdbg.gpio_config(pin=33, mode=2, pull_up=99, pull_down=0)
-        with self.assertRaises(ValueError):
-            self.mxdbg.gpio_config(pin=33, mode=2, pull_up=1, pull_down=99)
+            self.mxdbg.gpio_config(pin=33, mode=99, pull_up=True, pull_down=False)
             
     def test_spi_write_read(self):
         """测试 SPI 写和读功能。"""

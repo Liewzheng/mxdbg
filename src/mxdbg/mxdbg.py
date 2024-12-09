@@ -574,7 +574,7 @@ class MXDBG:
         task_cmd = {}
         error_map = {}
         
-        header_file = os.path.join(os.path.dirname(__file__), '../../main/mxdbg.h')
+        header_file = os.path.join(os.path.dirname(__file__), '../../espidf/main/mxdbg.h')
         if os.path.exists(header_file):
             self.__mxdbg_header_file = header_file
             self.__mxdbg_toml_path = os.path.join(os.path.dirname(__file__), 'mxdbg.toml')

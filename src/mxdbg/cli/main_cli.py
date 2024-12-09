@@ -24,7 +24,7 @@ def entry() -> int:
         print(f"mxDBG {__version__}")
             
     if args.manual:
-        url = "https://baidu.com"
+        url = "http://gitlab.it.mixo.local/shared-repo/jicai/mxdbg"
         print(f"Opening manual: {url}")
         webbrowser.open(url)
         return 0

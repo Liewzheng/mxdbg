@@ -1,9 +1,11 @@
 # coding: utf-8
 
-import serial
-from serial.tools import list_ports
-from loguru import logger
 import struct
+
+import serial
+from loguru import logger
+from serial.tools import list_ports
+
 
 class TS102:
     

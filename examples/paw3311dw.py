@@ -1,10 +1,13 @@
 import sys
-import numpy as np
-from mxdbg import MXDBG
-from PySide6.QtCore import Qt, QTimer, QElapsedTimer
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QVBoxLayout, QWidget
+
 import keyboard
+import numpy as np
+from PySide6.QtCore import QElapsedTimer, Qt, QTimer
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, QVBoxLayout,
+                               QWidget)
+
+from src.mxdbg.mxdbg import MXDBG
 
 
 class MainWindow(QMainWindow):

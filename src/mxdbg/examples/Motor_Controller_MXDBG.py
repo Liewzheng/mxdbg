@@ -1,15 +1,19 @@
 import marimo
 
-__generated_with = "0.9.31"
+__generated_with = "0.9.32"
 app = marimo.App(app_title="Motor Contoller ")
 
 
 @app.cell
-def __():
+def __(__file__):
     import marimo as mo
+    import sys, os
 
-    from src.mxdbg.mxdbg import MXDBG
-    return MXDBG, mo
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+    from mxdbg.mxdbg import MXDBG
+    import time
+    return MXDBG, mo, os, sys, time
 
 
 @app.cell(hide_code=True)
@@ -17,8 +21,6 @@ def __(mo):
     mo.md(
         r"""
         # 创建一个 MXDBG 对象
-
-        每次打开这个页面的时候只需要执行一次对象创建的行为即可，不需要多次全部执行。
 
         > 创建成功后可以看到下面提示所连接的 **COM 口**、**设备信息** 和 **软件信息**。
         """
@@ -55,14 +57,15 @@ def __(mo):
 
 @app.cell
 def __():
+    def get_freq(rpm: int) -> int:
+        MSaP = 10_000
+        return int(rpm / 60 * MSaP)
+
+
     # 例如，求算 10RPM 对应的 Freq
-
-    MSaP = 10_000
     rpm = 10
-
-    freq = int(rpm / 60 * MSaP)
-    print(freq)
-    return MSaP, freq, rpm
+    freq = get_freq(rpm)
+    return freq, get_freq, rpm
 
 
 @app.cell
@@ -85,18 +88,6 @@ def __(dev):
 
 @app.cell(hide_code=True)
 def __(mo):
-    mo.md(r"""# 停止 PWM""")
-    return
-
-
-@app.cell
-def __(dev):
-    dev.pwm_run_stop(pwm_running_state=False, channel=0)
-    return
-
-
-@app.cell(hide_code=True)
-def __(mo):
     mo.md(
         r"""
         # 控制方向
@@ -110,8 +101,9 @@ def __(mo):
 
 
 @app.cell
-def __(dev):
+def __(dev, time):
     dev.gpio_config(pin=40, mode=0x02, pull_up=False, pull_down=True)
+    time.sleep(2.5)
     return
 
 
@@ -122,8 +114,9 @@ def __(mo):
 
 
 @app.cell
-def __(dev):
+def __(dev, time):
     dev.gpio_write_read(pin=40, level=1)
+    time.sleep(2.5)
     return
 
 
@@ -134,8 +127,21 @@ def __(mo):
 
 
 @app.cell
-def __(dev):
+def __(dev, time):
     dev.gpio_write_read(pin=40, level=0)
+    time.sleep(5)
+    return
+
+
+@app.cell(hide_code=True)
+def __(mo):
+    mo.md(r"""# 停止 PWM""")
+    return
+
+
+@app.cell
+def __(dev):
+    dev.pwm_run_stop(pwm_running_state=False, channel=0)
     return
 
 

@@ -14,13 +14,13 @@
 - **Develop Platform**: Windows / Mac / Linux
 - **SDK**: ESP-IDF
 
-![Function Digram of ExtBoard for MXDBG.png](./Documents/Function_Digram_of_ExtBoard_for_MXDBG.png)
+![Function Digram of ExtBoard for MXDBG.png](./docs/Function_Digram_of_ExtBoard_for_MXDBG.png)
 
 ## Introduction
 
 This is designed to be easy to use and to provide a simple interface for debugging programs or test environment. It is written in C in Embedded system, and use python for the front-end.
 
-![ESP32-S3-Pico-details-inter](./Documents/ESP32-S3-Pico-details-inter.jpg)
+![ESP32-S3-Pico-details-inter](./docs/ESP32-S3-Pico-details-inter.jpg)
 
 ## How to use
 
@@ -91,7 +91,7 @@ print(ret, data)
 
 In the Extboard for MXDBG v0.1, the I2C pin defined as follow:
 
-![I2C in ExtBoard](./Documents/I2C_in_ExtBoard.png)
+![I2C in ExtBoard](./docs/I2C_in_ExtBoard.png)
 
 ```python
 
@@ -122,7 +122,7 @@ print(ret, data)
 
 In the Extboard for MXDBG v0.1, the SPI pin defined as follow:
 
-![SPI in ExtBoard](./Documents/SPI_in_ExtBoard.png)
+![SPI in ExtBoard](./docs/SPI_in_ExtBoard.png)
 
 ```python
 
@@ -151,26 +151,26 @@ for _ in range(100):
 1. Replace the 0Ohm resistors (R10 / R11 / R12 / R13) between the SPI and the device.
 2. Increase or decrease the frequency of the SPI signal.
 
-![SPI Wave Signal 500KHz](./Documents/SPI_WAVE_1V2_500KHz.png)
+![SPI Wave Signal 500KHz](./docs/SPI_WAVE_1V2_500KHz.png)
 
-![SPI Wave Signal 4MHz](./Documents/SPI_WAVE_1V2_4MHz.png)
+![SPI Wave Signal 4MHz](./docs/SPI_WAVE_1V2_4MHz.png)
 
 
 # ExtBoard for MXDBG v0.1
 
-![Extention Board for MXDBG](./Documents/ExtBoard_for_MXDBG_v0.1.png)
+![Extention Board for MXDBG](./docs/ExtBoard_for_MXDBG_v0.1.png)
 
-![PCB of ExtBoard for MXDBG](./Documents/PCB_ExtBoard_for_MXDBG_v0.1.png)
+![PCB of ExtBoard for MXDBG](./docs/PCB_ExtBoard_for_MXDBG_v0.1.png)
 
 The ExtBoard for MXDBG v0.1 is connected with ESP32 S3 pico as follow.
 
-![ExtBoar_for_MXDBG_v0.1_instance](./Documents/ExtBoard_for_MXDBG_v0.1_instance.png)
+![ExtBoar_for_MXDBG_v0.1_instance](./docs/ExtBoard_for_MXDBG_v0.1_instance.png)
 
-Read the [Schematic of ExtBoard for MXDBG](./Documents/SCH_Schematic_ExtBoard_for_MXDBG_v0.1_2024-11-15.pdf) for more details.
+Read the [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXDBG_v0.1_2024-11-15.pdf) for more details.
 
 ## Connctors
 
-![Connectors of ExtBoard for MXDBG](./Documents/Connectors_of_ExtBoard_for_MXDBG_v0.1.png)
+![Connectors of ExtBoard for MXDBG](./docs/Connectors_of_ExtBoard_for_MXDBG_v0.1.png)
 
 - **J3**: Extend the power supply output. It supply 4 kinds of power resouce, `1.2V`, `1.8V`, `3.3V` and `5V`.
 - **J4**: Supply extention GPIO (`IO0` / `IO5` / `IO6` / `IO7`) from PCA9557PW. Control it through the I2C(port `1`) of MCU.
@@ -236,21 +236,21 @@ Compared with the `v0.1`, the `v0.2.1` has the following changes:
 3. Add some text labels to make it easier to use.
 4. Add 4 brand new pins for controlable power supply, which can be used to power the peripherals.
 
-![Extention Board for MXDBG v0.2.1](./Documents/ExtBoard_for_MXDBG_v0.2.1.png)
+![Extention Board for MXDBG v0.2.1](./docs/ExtBoard_for_MXDBG_v0.2.1.png)
 
-![Extention Board for MXDBG v0.2.1 back end](./Documents/ExtBoard_for_MXDBG_v0.2.1_back_end.png)
+![Extention Board for MXDBG v0.2.1 back end](./docs/ExtBoard_for_MXDBG_v0.2.1_back_end.png)
 
-![PCB of ExtBoard for MXDBG v0.2.1](./Documents/PCB_ExtBoard_for_MXDBG_v0.2.1.png)
+![PCB of ExtBoard for MXDBG v0.2.1](./docs/PCB_ExtBoard_for_MXDBG_v0.2.1.png)
 
 The ExtBoard for MXDBG v0.2.1 is connected with ESP32 S3 pico as follows.
 
-![ExtBoar_for_MXDBG_v0.2.1_instance](./Documents/ExtBoard_for_MXDBG_v0.2.1_instance.png)
+![ExtBoar_for_MXDBG_v0.2.1_instance](./docs/ExtBoard_for_MXDBG_v0.2.1_instance.png)
 
-Read the [Schematic of ExtBoard for MXDBG](./Documents/SCH_Schematic_ExtBoard_for_MXDBG_v0.2.1_2024-11-23.pdf) for more details.
+Read the [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXDBG_v0.2.1_2024-11-23.pdf) for more details.
 
 ## Connctors
 
-![J5 and J4 connector](./Documents/ExtBoard_for_MXDBG_v0.2.1_SPI_I2C.png)
+![J5 and J4 connector](./docs/ExtBoard_for_MXDBG_v0.2.1_SPI_I2C.png)
 
 - **J3**: Extend the power supply output. It supply 4 kinds of power resouce (`1.2V`, `1.8V`, `3.3V` and `5V`) and GND.
 - **J4**: Support 4 controlable power supply pins (`1V8_1` / `1V8_2` / `3V3_1` / `3V3_2`) and 6 extend GPIOs (`IO12` / `IO13` / `IO14` / `IO15` / `IO16` / `IO17`) working at `3.3V`.

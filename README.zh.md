@@ -13,7 +13,7 @@
 - 开发平台：Windows / Mac / Linux
 - SDK：ESP-IDF
 
-![Function Digram of ExtBoard for MXDBG.png](./Documents/Function_Digram_of_ExtBoard_for_MXDBG.png)
+![Function Digram of ExtBoard for MXDBG.png](./docs/Function_Digram_of_ExtBoard_for_MXDBG.png)
 
 ## 介绍
 
@@ -21,7 +21,7 @@
 
 下面是 ESP32 Pico 的硬件接口示意图，使用时（尤其是 GPIO）请参考下方的引脚定义图。
 
-![ESP32-S3-Pico-details-inter](./Documents/ESP32-S3-Pico-details-inter.jpg)
+![ESP32-S3-Pico-details-inter](./docs/ESP32-S3-Pico-details-inter.jpg)
 
 ## 如何使用
 
@@ -92,7 +92,7 @@ print(ret, data)
 
 在 ExTBoard for MXDBG v0.1 上使用时，I2C 引脚定义如下：
 
-![I2C in ExtBoard](./Documents/I2C_in_ExtBoard.png)
+![I2C in ExtBoard](./docs/I2C_in_ExtBoard.png)
 
 ```python
 
@@ -123,7 +123,7 @@ print(ret, data)
 
 在 ExTBoard for MXDBG v0.1 上使用时，SPI 引脚定义如下：
 
-![SPI in ExtBoard](./Documents/SPI_in_ExtBoard.png)
+![SPI in ExtBoard](./docs/SPI_in_ExtBoard.png)
 
 
 ```python
@@ -153,9 +153,9 @@ for _ in range(100):
 1. 增加或降低 SPI 时钟频率。
 2. 替换 SPI 外设和设备间的 `0hm` 电阻为 `50ohm` （或 `33Ohm` 等） 电阻。
 
-![SPI Wave Signal 500KHz](./Documents/SPI_WAVE_1V2_500KHz.png)
+![SPI Wave Signal 500KHz](./docs/SPI_WAVE_1V2_500KHz.png)
 
-![SPI Wave Signal 4MHz](./Documents/SPI_WAVE_1V2_4MHz.png)
+![SPI Wave Signal 4MHz](./docs/SPI_WAVE_1V2_4MHz.png)
 
 ## Q/A
 
@@ -169,21 +169,21 @@ A: 可以，通过 `dev.restart()` 接口可以控制 ESP32 进行复位，此�
 
 # ExtBoard for MXDBG v0.1
 
-![Extention Board for MXDBG](./Documents/ExtBoard_for_MXDBG_v0.1.png)
+![Extention Board for MXDBG](./docs/ExtBoard_for_MXDBG_v0.1.png)
 
-![Extention Board for MXDBG back end](./Documents/ExtBoard_for_MXDBG_v0.1_back_end.png)
+![Extention Board for MXDBG back end](./docs/ExtBoard_for_MXDBG_v0.1_back_end.png)
 
-![PCB of ExtBoard for MXDBG](./Documents/PCB_ExtBoard_for_MXDBG_v0.1.png)
+![PCB of ExtBoard for MXDBG](./docs/PCB_ExtBoard_for_MXDBG_v0.1.png)
 
 ExtBoard for MXDBG v0.1 与 ESP32-S3 Pico 开发板连接方式如下：
 
-![ExtBoar_for_MXDBG_v0.1_instance](./Documents/ExtBoard_for_MXDBG_v0.1_instance.png)
+![ExtBoar_for_MXDBG_v0.1_instance](./docs/ExtBoard_for_MXDBG_v0.1_instance.png)
 
-查阅 [Schematic of ExtBoard for MXDBG](./Documents/SCH_Schematic_ExtBoard_for_MXDBG_v0.1_2024-11-15.pdf) 以获取更多信息。
+查阅 [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXDBG_v0.1_2024-11-15.pdf) 以获取更多信息。
 
 ## 连接引脚
 
-![Connectors of ExtBoard for MXDBG](./Documents/Connectors_of_ExtBoard_for_MXDBG_v0.1.png)
+![Connectors of ExtBoard for MXDBG](./docs/Connectors_of_ExtBoard_for_MXDBG_v0.1.png)
 
 - J3: 扩展供电接口，提供了四类电源输出，分别是 `1.2V` / `1.8V` / `3.3V` / `5V`
 - J4: 提供扩展 GPIO （`3.3V`）（`IO0` / `IO5` / `IO6` / `IO7`）。
@@ -254,21 +254,21 @@ dev.power_control(communication_type="I2C", power_type="0V") # communication_typ
 3. 对主要的通信方式 (SPI / I2C) 进行丝印标记，方便用户使用。
 4. 同时增加了 4个GPIO 可控的电源，支持直接从 LDO 引出电源，以解决之前版本扩展IO不能为设备供电的问题。
 
-![Extention Board for MXDBG v0.2.1](./Documents/ExtBoard_for_MXDBG_v0.2.1.png)
+![Extention Board for MXDBG v0.2.1](./docs/ExtBoard_for_MXDBG_v0.2.1.png)
 
-![Extention Board for MXDBG v0.2.1 back end](./Documents/ExtBoard_for_MXDBG_v0.2.1_back_end.png)
+![Extention Board for MXDBG v0.2.1 back end](./docs/ExtBoard_for_MXDBG_v0.2.1_back_end.png)
 
-![PCB of ExtBoard for MXDBG v0.2.1](./Documents/PCB_ExtBoard_for_MXDBG_v0.2.1.png)
+![PCB of ExtBoard for MXDBG v0.2.1](./docs/PCB_ExtBoard_for_MXDBG_v0.2.1.png)
 
 ExtBoard for MXDBG v0.2.1 与 ESP32-S3 Pico 开发板连接方式如下：
 
-![ExtBoar_for_MXDBG_v0.1_instance](./Documents/ExtBoard_for_MXDBG_v0.2.1_instance.png)
+![ExtBoar_for_MXDBG_v0.1_instance](./docs/ExtBoard_for_MXDBG_v0.2.1_instance.png)
 
-查阅 [Schematic of ExtBoard for MXDBG](./Documents/SCH_Schematic_ExtBoard_for_MXDBG_v0.2.1_2024-11-23.pdf) 以获取更多信息。
+查阅 [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXDBG_v0.2.1_2024-11-23.pdf) 以获取更多信息。
 
 ## 连接引脚
 
-![J5 and J4 connector](./Documents/ExtBoard_for_MXDBG_v0.2.1_SPI_I2C.png)
+![J5 and J4 connector](./docs/ExtBoard_for_MXDBG_v0.2.1_SPI_I2C.png)
 
 - J3: 扩展供电接口，提供了四类电源输出和GND，电源输出（带有丝印）分别是 `1.2V` / `1.8V` / `3.3V` / `5V`。
 - J4: 提供 4个可控电源输出，支持直接从 LDO 引出电源（丝印分别是 `1V8_1` / `1V8_2` / `3V3_1` / `3V3_2`）;以及 6个 GPIO （`3.3V`）（`IO12` / `IO13` / `IO14` / `IO15` / `IO16` / `IO17`）。
@@ -315,13 +315,13 @@ print(ret, data)
 
 测试了一下用 python 控制 `1v8_1` 口极限上下电，发现速率最高大概在 `50Hz`，基本上算是能用的水平，毕竟还有通信开销。
 
-![1V8 Power](./Documents/ExtBoard_for_MXDBG_v0.2.1_1v8_1.png)
+![1V8 Power](./docs/ExtBoard_for_MXDBG_v0.2.1_1v8_1.png)
 
 经测试，虽然 `3v3_1` 和 `3v3_2` 都有些下电缓慢，从 `3.3V` 下降到 `0.99V` 以下需要 `1ms`，但是 USB 的通信速率根本碾不上，所以不用担心。
 
-![3V3 Power](./Documents/ExtBoard_for_MXDBG_v0.2.1_3v3_1.png)
+![3V3 Power](./docs/ExtBoard_for_MXDBG_v0.2.1_3v3_1.png)
 
-![3V3 Power](./Documents/ExtBoard_for_MXDBG_v0.2.1_3v3_2.png)
+![3V3 Power](./docs/ExtBoard_for_MXDBG_v0.2.1_3v3_2.png)
 
 ### SPI/I2C Level Shifter 的电源控制
 

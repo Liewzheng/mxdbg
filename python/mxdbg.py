@@ -1015,16 +1015,23 @@ class MXDBG:
         if resolution_hz > 80_000_000:
             logger.error("Invalid timer resolution. Timer resolution should be less than 80MHz.")
             return False, None
+        else:
+            coeff = 80_000_000 // resolution_hz
 
         timer_resolution = resolution_hz
 
         if freq > timer_resolution:
             logger.error("Invalid frequency. Frequency should be less than timer resolution.")
             return False, None
+        else:
+            freq /= coeff
+            freq = int(freq)
 
         timer_resolution = ctypes.c_uint32(timer_resolution).value
         period_ticks = ctypes.c_uint32(resolution_hz // freq).value
         duty_ticks = int(period_ticks * duty)
+        
+        assert 0 < period_ticks < 65535, "Invalid period ticks. Should be in the range of 1 to 65535."
 
         pin = ctypes.c_uint8(pin).value
         channel = ctypes.c_uint8(channel).value

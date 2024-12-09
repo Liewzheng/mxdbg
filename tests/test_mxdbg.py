@@ -1,5 +1,5 @@
 import unittest
-from mxdbg import MXDBG
+from src.mxdbg.mxdbg import MXDBG
 
 class TestMXDBG(unittest.TestCase):
 

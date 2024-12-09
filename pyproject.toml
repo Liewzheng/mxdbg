@@ -1,0 +1,19 @@
+[project]
+name = "mxdbg"
+version = "0.1.0"
+description = "a simple online debugger for Windows/Mac/Linux programs."
+authors = [
+    {name = "Jicai Liu", email = "jicai.liu@mixosense.com"},
+]
+dependencies = ["loguru>=0.7.3", "toml>=0.10.2", "pyserial>=3.5"]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+
+[tool.pdm]
+distribution = true

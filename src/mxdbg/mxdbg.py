@@ -293,7 +293,7 @@ class MXDBG:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())  # 时间戳
         }
         try:
-            id = agent.send(service_owner="SV",
+            agent.send(service_owner="SV",
                             service_name="mxDBG",
                             service_decription="mxDBG basic service",
                             period_sec=-1,

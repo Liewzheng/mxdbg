@@ -1,6 +1,6 @@
 [project]
-name = "mxdbg"
-version = "0.1.0"
+name = "mxDBG"
+dynamic = ["version"]
 description = "a simple online debugger for Windows/Mac/Linux programs."
 authors = [
     {name = "Jicai Liu", email = "jicai.liu@mixosense.com"},
@@ -14,6 +14,58 @@ license = {text = "MIT"}
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
-
 [tool.pdm]
 distribution = true
+version = { source = "file", path = "src/mxESP32Driver/__version__.py" }
+
+[tool.pdm.resolution]
+respect-source-order = true
+
+[[tool.pdm.source]]
+name = "mxpypi"
+url = "http://mxpypi.it.mixo.local/"
+verify_ssl = false
+
+# 包发布时提供给用户的命令行工具
+[project.scripts]
+mxESP32Driver = "mxESP32Driver.cli.main_cli:entry"
+
+
+# 测试发布用脚本。PDM支持用pre_前缀自动在某个脚本前跑一个脚本，这里我们用它显示一些提示
+[tool.pdm.scripts]
+create_venv = { cmd = "pdm venv create" }
+use_in_project_venv = { cmd = "pdm use --venv in-project" }
+
+exam = { composite = [
+    "use_in_project_venv",
+    "isort .",
+    "ruff check src/ ",
+    "ruff check tests/",
+    "mypy src/ --strict",
+    "pytest tests/ --capture=tee-sys -vv",
+    "mkdocs build",
+] }
+
+tag_release = { cmd = "tag_release.py"}
+pubdoc = { cmd = "pubdoc.py"}
+pubpackage = { cmd = "pubpackage.py"}
+
+pre_build = { composite = ["exam", "pyclean ."] }
+
+
+# 跳过mypy一些无法处理的第三方库的报错信息
+[tool.mypy]
+#不检查marimo GUI的代码
+exclude = ['marimo_gui.py$']
+
+[[tool.mypy.overrides]]
+module = 'pyftdi.*'
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = 'gradio'
+ignore_missing_imports = true
+
+# ruff 不检查f-string里缺失的variable
+[tool.ruff.lint]
+ignore = ["F541"]

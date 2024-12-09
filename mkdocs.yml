@@ -1,0 +1,17 @@
+site_name: mxDBG Documentation
+theme:
+  name: material
+
+nav:
+  - 'index.md'
+  - 'releases.md'
+  - 'user_manual.md'
+  - 'dev_howto.md'
+
+plugins:
+- search
+- mkdocstrings:
+    handlers:
+      python:
+        options:
+          show_submodules: true

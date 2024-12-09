@@ -1,6 +1,9 @@
 build/
 managed_components/
 sdkconfig.old
+sdkconfig.ci
+sdkconfig.ci.dualchannel
+sdkconfig.defaults
 __pycache__/
 .vscode/
 

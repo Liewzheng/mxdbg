@@ -6,13 +6,16 @@ app = marimo.App(app_title="Motor Contoller ")
 
 @app.cell
 def __(__file__):
+    import os
+    import sys
+
     import marimo as mo
-    import sys, os
 
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-    from mxdbg.mxdbg import MXDBG
     import time
+
+    from mxdbg.mxdbg import MXDBG
     return MXDBG, mo, os, sys, time
 
 

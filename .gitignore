@@ -31,3 +31,8 @@ env.bak/
 venv.bak/
 
 pdm.lock
+
+site/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/

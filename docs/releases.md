@@ -1,6 +1,10 @@
 # Releases
 
-## v241909.0.rc3
+## v241210.0.rc1
+
+- Remove verbose code.
+
+## v241209.0.rc3
 
 - Update documents.
 

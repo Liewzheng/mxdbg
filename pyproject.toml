@@ -39,7 +39,7 @@ build-backend = "pdm.backend"
 
 [tool.pdm]
 distribution = true
-version = { source = "file", path = "src/mxdbg/__version__.py" }
+version = { source = "file", path = "src/mxESP32Debugger/__version__.py" }
 
 [tool.pdm.resolution]
 respect-source-order = true
@@ -51,7 +51,7 @@ verify_ssl = false
 
 # 包发布时提供给用户的命令行工具
 [project.scripts]
-mxdbg = "mxdbg.cli.main_cli:entry"
+mxdbg = "mxESP32Debugger.cli.main_cli:entry"
 
 
 # 测试发布用脚本。PDM支持用pre_前缀自动在某个脚本前跑一个脚本，这里我们用它显示一些提示

@@ -1,9 +1,9 @@
 
 [中文](./README.zh.md)
 
-# MXDBG
+# mxESP32Debugger
 
-- **Project Name**: MXDBG
+- **Project Name**: mxESP32Debugger
 - **Project Brief**: 
   - This is a simple online debugger for Windows/Mac/Linux programs. 
   - Provide I2C, PWM, GPIO, and SPI(developing) interfaces. 

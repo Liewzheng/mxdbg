@@ -1,6 +1,6 @@
 # Releases
 
-## v241210.0.rc2
+## v241210.0.rc3
 
 - rename `mxdbg.mxdbg` as `mxESP32Debugger.mxdbg`.
 

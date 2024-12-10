@@ -15,11 +15,13 @@ import sys
 import time
 from types import MappingProxyType
 
-from mxdbg.__version__ import __version__
-from loguru import logger
-import toml
 import serial.tools.list_ports
+import toml
+from loguru import logger
 from serial import Serial
+
+from mxdbg.__version__ import __version__
+
 
 class MXDBG:
 

@@ -1,5 +1,9 @@
 # Releases
 
+## v241210.0.rc2
+
+- rename `mxdbg.mxdbg` as `mxESP32Debugger.mxdbg`.
+
 ## v241210.0.rc1
 
 - Remove verbose code.

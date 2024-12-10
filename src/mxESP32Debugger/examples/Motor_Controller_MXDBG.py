@@ -15,7 +15,7 @@ def __(__file__):
 
     import time
 
-    from mxdbg.mxdbg import MXDBG
+    from mxESP32Debugger.debugger import Dbg as MXDBG
     return MXDBG, mo, os, sys, time
 
 

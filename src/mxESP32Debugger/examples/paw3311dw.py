@@ -7,7 +7,7 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QApplication, QLabel, QMainWindow, QVBoxLayout,
                                QWidget)
 
-from src.mxdbg.mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 
 class MainWindow(QMainWindow):

@@ -20,10 +20,10 @@ import toml
 from loguru import logger
 from serial import Serial
 
-from mxdbg.__version__ import __version__
+from mxESP32Debugger.__version__ import __version__
 
 
-class MXDBG:
+class Dbg:
 
     def __init__(self, *args, **kwargs):
         self.__client = None

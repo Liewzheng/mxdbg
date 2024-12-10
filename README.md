@@ -33,7 +33,7 @@
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -61,7 +61,7 @@ print(ret, data)
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -96,7 +96,7 @@ print(ret, data)
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -128,7 +128,7 @@ print(ret, data)
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -205,7 +205,7 @@ ExtBoard for MXDBG v0.1 与 ESP32-S3 Pico 开发板连接方式如下：
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -232,7 +232,7 @@ dev.expand_io_write_read(7)
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()
@@ -291,7 +291,7 @@ ExtBoard for MXDBG v0.2.1 与 ESP32-S3 Pico 开发板连接方式如下：
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # 创建一个 MXDBG 对象
 dev = MXDBG()

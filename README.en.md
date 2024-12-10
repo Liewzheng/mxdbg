@@ -32,7 +32,7 @@ This is designed to be easy to use and to provide a simple interface for debuggi
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -60,7 +60,7 @@ print(ret, data)
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -95,7 +95,7 @@ In the Extboard for MXDBG v0.1, the I2C pin defined as follow:
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -126,7 +126,7 @@ In the Extboard for MXDBG v0.1, the SPI pin defined as follow:
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -191,7 +191,7 @@ Read the [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXD
 2. You should note that `IO0` is in open-drain mode which means that you cannot pull it up without any pull-up power resouce, and `IO5` / `IO6` / `IO7` are in push-pull mode.
 
 ```python
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -215,7 +215,7 @@ dev.expand_io_write_read(7)
 2. You can control the power of SPI/I2C Level Shifter through `power_control()` API.
 
 ```python
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()
@@ -273,7 +273,7 @@ Read the [Schematic of ExtBoard for MXDBG](./docs/SCH_Schematic_ExtBoard_for_MXD
 
 ```python
 
-from mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 # Create a MXDBG object
 dev = MXDBG()

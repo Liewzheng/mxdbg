@@ -2,8 +2,8 @@
 import argparse
 import webbrowser
 
-from mxdbg.__version__ import __version__
-from mxdbg.mxdbg import MXDBG
+from mxESP32Debugger.__version__ import __version__
+from mxESP32Debugger.debugger import Dbg as MXDBG
 
 
 def entry() -> int:

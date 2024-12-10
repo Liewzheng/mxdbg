@@ -1,13 +1,13 @@
 import unittest
 
-from src.mxdbg.mxdbg import MXDBG
+from mxESP32Debugger.debugger import Dbg
 
 
 class TestMXDBG(unittest.TestCase):
 
     def setUp(self):
         """初始化 MXDBG 对象并连接设备。"""
-        self.mxdbg = MXDBG()
+        self.mxdbg = Dbg()
 
     def test_i2c_write_read(self):
         """测试 I2C 写和读功能失败情况。"""

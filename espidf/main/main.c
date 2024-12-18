@@ -1400,31 +1400,33 @@ void task_spi_read_image(void *pvParameters)
 {
     int ret = 0;
     
-    extern int get_raw_image();
-    extern void paw3311dw_init();
+    extern int paw33xx_get_image();
     extern uint8_t image_data[];
 
-    bool chip_init = false;
+    uint16_t image_width = 0;
+    uint16_t image_height = 0;
+    uint32_t image_size = 0;
 
     while (1) {
         if (xSemaphoreTake(semaphore_spi_read_image, portMAX_DELAY) == pdTRUE) {
             ESP_LOGI(TAG, "SPI read image task");
 
+            memset(com_data_send_buffer, 0, sizeof(com_data_send_buffer));
+
+            image_width = DATA_SYNTHESIS_2_BYTES(&(com_data_content[0]));
+            image_height = DATA_SYNTHESIS_2_BYTES(&(com_data_content[2]));
+            image_size = image_width * image_height;
+
             spi_device_acquire_bus(spi, portMAX_DELAY);
 
-            if (chip_init == false) {
-                paw3311dw_init();
-                chip_init = true;
-            }
-
-            if (get_raw_image() != 0) {
+            if (paw33xx_get_image() != 0) {
                 ret = MXDBG_ERR_SPI_READ_IMAGE_FAILED;
                 ESP_LOGE(TAG, "Get raw image failed");
                 data_pack(NULL, 0, TASK_SPI_READ_IMAGE, ret);
             } else {
                 ret = ESP_OK;
                 ESP_LOGI(TAG, "Get raw image completed");
-                data_pack(image_data, 900, TASK_SPI_READ_IMAGE, ret);
+                data_pack(image_data, image_size, TASK_SPI_READ_IMAGE, ret);
             }
 
             spi_device_release_bus(spi); // When using SPI

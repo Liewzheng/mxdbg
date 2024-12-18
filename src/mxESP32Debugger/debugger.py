@@ -590,7 +590,7 @@ class Dbg:
                     break
             logger.error(f"Error code: 0x{ctypes.c_uint32(error_code).value:08X}, Description: {error_desc}")
 
-    def i2c_find_slave(self, port: int = 0) -> tuple:
+    def i2c_find_slave(self, port: int = 0, slaves:list=[]) -> tuple:
         
         '''
         @brief Find I2C slave devices.
@@ -599,7 +599,7 @@ class Dbg:
         '''
 
         found_device_list = []
-        for slave_id in range(0x04, 0x7F):
+        for slave_id in (range(0x04, 0x7F) if slaves == [] else slaves):
             try:
                 ret, data = self.i2c_write_read(slave_id, [0x00], 0, port=port)
                 if ret:
@@ -794,16 +794,28 @@ class Dbg:
             self.__mark_gpio_used(pin)
             return True
 
-    def spi_write_read(self, write_list: list, read_length: int) -> tuple:
+    def spi_write_read(self, write_list: list, read_length: int, 
+                       critical_mode:bool=False, 
+                       justice: int = 0x00, justice_index:int = 1, 
+                       timeout: int = 50, examine_period:int = 1) -> tuple:
         '''
         @brief Write and read data from SPI slave device. (The default SPI pins are MISO: `12`, MOSI: `13`, SCLK: `14`, CS: `15`.)
         @param write_list: Data to write to SPI slave device. (It should be a list of bytes. e.g., `[0x00, 0x01]` or `[]`.)
         @param read_length: Length of data to read from SPI slave device.
+        @param critical_mode: Critical mode. (`True`: Enable, `False`: Disable.)
+        @param justice: The correct value to examine the data read from spi is correct or not. (Default is `0x00`.)
+        @param timeout: Timeout in ms. (Default is `50`.)
+        @param examine_period: The period to examine the data read from spi. (Default is `1`.)
         @return: Data read from SPI slave device.
         '''
 
         write_len = ctypes.c_uint32(len(write_list)).value
         read_len = ctypes.c_uint32(read_length).value
+        critical_mode = ctypes.c_uint8(0x01 if critical_mode else 0x00).value
+        justice = ctypes.c_uint8(justice).value
+        justice_index = ctypes.c_uint8(justice_index).value
+        examine_period = ctypes.c_uint8(examine_period).value
+        timeout = ctypes.c_uint8(timeout).value
 
         if (write_len == 0) and (read_len == 0):
             logger.error("Write length and read length should not be zero.")
@@ -812,14 +824,21 @@ class Dbg:
             if read_len > write_len:
                 logger.error("Read length should not be larger than write length.")
                 return False, None
+            
+        if critical_mode and (justice_index > read_len - 1):
+            logger.error(f"Justice index {justice_index} should not be larger than read length {read_len}.")
+            return False, None
 
+        # data sent 
         spi_data_temp = [(write_len & 0xFF000000) >> 24, (write_len & 0x00FF0000) >> 16,
                          (write_len & 0x0000FF00) >> 8, (write_len & 0x000000FF) >> 0,
                          (read_len & 0xFF000000) >> 24, (read_len & 0x00FF0000) >> 16,
                          (read_len & 0x0000FF00) >> 8, (read_len & 0x000000FF) >> 0]
         spi_data_temp += write_list
+        spi_data_temp += [critical_mode, justice, justice_index, examine_period, timeout]
 
         ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp)
+        
 
         self.__check_ret_code(self.task_cmd["TASK_SPI_WRITE_READ"], ret)
 
@@ -827,7 +846,10 @@ class Dbg:
             if read_len == 0:
                 return True, None
             else:
-                return True, list(data)
+                if critical_mode:
+                    return True if data[-1] == 0x01 else False, list(data[:-1]), 
+                else:
+                    return True, list(data)
         else:
             return False, None
 
@@ -933,13 +955,18 @@ class Dbg:
         else:
             return False, None
 
-    def spi_read_image(self) -> tuple:
+    def spi_read_image(self, image_width:int, image_height:int) -> tuple:
         '''
         @brief Read image data from SPI slave device.
         @return: Image data.
         '''
+        
+        image_width = ctypes.c_uint16(image_width).value
+        image_height = ctypes.c_uint16(image_height).value
+        spi_data_temp = [(image_width & 0xFF00) >> 8, image_width & 0x00FF,
+                         (image_height & 0xFF00) >> 8, image_height & 0x00FF]
 
-        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_READ_IMAGE"], [])
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_READ_IMAGE"], spi_data_temp)
 
         if ret == 0:
             return True, data
@@ -1611,7 +1638,7 @@ class Dbg:
         @return: Extension board version.
         '''
         
-        ret, data = self.i2c_find_slave(port=1)
+        ret, data = self.i2c_find_slave(port=1, slaves=[self.__pca9557pw_addr, self.__tca9555pwr_addr])
         if ret is not True:
             
             # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> BUG FIXED FOR v0.2.1 <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -1621,7 +1648,7 @@ class Dbg:
                 logger.error("I2C config failed.")
                 raise ValueError("I2C config failed.")
             
-            ret, data = self.i2c_find_slave(port=1)
+            ret, data = self.i2c_find_slave(port=1, slaves=[self.__pca9557pw_addr, self.__tca9555pwr_addr])
             if ret is not True:
                 logger.info("No extension board found.")
                 return False, None

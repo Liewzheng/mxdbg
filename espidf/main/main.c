@@ -28,6 +28,7 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_rom_sys.h"
 
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
@@ -937,6 +938,13 @@ void task_spi_write_read(void *pvParameters)
     uint32_t read_len = 0;
     uint8_t *write_buffer = NULL;
     uint8_t *read_buffer = NULL;
+    bool critical_mode = false;
+    uint8_t justice = 0x00;
+    uint8_t justice_index = 0;
+    uint8_t examine_period = 1;
+    uint8_t timeout = 0;
+    uint8_t counts = 0;
+    bool examine_result = false;
 
     while (1) {
         if (xSemaphoreTake(semaphore_spi_write_read, portMAX_DELAY) == pdTRUE) {
@@ -959,6 +967,17 @@ void task_spi_write_read(void *pvParameters)
                 data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
+            }
+
+            critical_mode = com_data_content[8 + write_len] & 0x01 ? true : false;
+            justice = com_data_content[9 + write_len];
+            justice_index = com_data_content[10 + write_len];
+            examine_period = com_data_content[11 + write_len];
+            timeout = com_data_content[12 + write_len];
+
+            if (critical_mode)
+            {
+                ESP_LOGI(TAG, "Critical mode: %s, justice: 0x%02X, justice_index: %d, examine_period: %d, timeout: %d",critical_mode ? "True" : "False",  justice, justice_index, examine_period, timeout);
             }
 
             spi_device_acquire_bus(spi, portMAX_DELAY);
@@ -1028,7 +1047,7 @@ void task_spi_write_read(void *pvParameters)
 
                 if (read_len > 0) {
                     t.rxlength = read_len * 8;
-                    read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                    read_buffer = (uint8_t *)heap_caps_malloc(read_len + 1, MALLOC_CAP_DMA);
                     if (read_buffer == NULL) {
                         ret = ESPRESSIF_ERR_NO_MEM;
                         ESP_LOGE(TAG, "Memory allocation failed");
@@ -1041,30 +1060,81 @@ void task_spi_write_read(void *pvParameters)
                     t.rx_buffer = read_buffer;
                 }
 
-                ret = spi_device_transmit(spi, &t); // Transmit!
-                if (ret != ESP_OK) {
-                    ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
-                    ESP_LOGE(TAG, "SPI transaction failed");
-                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                if (critical_mode)
+                {
 
-                    if (write_len > 0) {
-                        heap_caps_free(write_buffer);
-                        write_buffer = NULL;
+                    counts = timeout / examine_period;
+
+                    for (uint32_t i = 0; i < counts; i+=examine_period)
+                    {
+                        ret = spi_device_transmit(spi, &t); // Transmit and receive
+                        if (ret != ESP_OK) {
+                            ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                            ESP_LOGE(TAG, "SPI transaction failed");
+                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                            if (write_len > 0) {
+                                heap_caps_free(write_buffer);
+                                write_buffer = NULL;
+                            }
+
+                            if (read_len > 0) {
+                                heap_caps_free(read_buffer);
+                                read_buffer = NULL;
+                            }
+
+                            xSemaphoreGive(semaphore_task_notify);
+                            continue;
+                        }
+                        else
+                        {
+                            esp_rom_delay_us(examine_period * 1000);
+
+                            if (read_buffer[justice_index] == justice)
+                            {
+                                examine_result = true;
+                                break;
+                            }
+                        }
+
                     }
-
-                    if (read_len > 0) {
-                        heap_caps_free(read_buffer);
-                        read_buffer = NULL;
-                    }
-
-                    xSemaphoreGive(semaphore_task_notify);
-                    continue;
                 }
+                else  // not in critical mode
+                {
+                    ret = spi_device_transmit(spi, &t); // Transmit and receive
+                    if (ret != ESP_OK) {
+                        ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                        ESP_LOGE(TAG, "SPI transaction failed");
+                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                        if (write_len > 0) {
+                            heap_caps_free(write_buffer);
+                            write_buffer = NULL;
+                        }
+
+                        if (read_len > 0) {
+                            heap_caps_free(read_buffer);
+                            read_buffer = NULL;
+                        }
+
+                        xSemaphoreGive(semaphore_task_notify);
+                        continue;
+                    }
+                }
+
             }
 
             spi_device_release_bus(spi); // When using SPI
 
-            data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
+            if (critical_mode)
+            {
+                ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
+                data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
+            }
+            else
+            {
+                data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
+            }
             xSemaphoreGive(semaphore_task_notify);
 
             if (write_len > 0) {

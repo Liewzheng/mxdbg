@@ -975,57 +975,123 @@ void task_spi_write_read(void *pvParameters)
             examine_period = com_data_content[11 + write_len];
             timeout = com_data_content[12 + write_len];
 
-            if (critical_mode)
-            {
-                ESP_LOGI(TAG, "Critical mode: %s, justice: 0x%02X, justice_index: %d, examine_period: %d, timeout: %d",critical_mode ? "True" : "False",  justice, justice_index, examine_period, timeout);
+            if (critical_mode) {
+                ESP_LOGI(TAG, "Critical mode: %s, justice: 0x%02X, justice_index: %d, examine_period: %d, timeout: %d",
+                         critical_mode ? "True" : "False", justice, justice_index, examine_period, timeout);
             }
 
             spi_device_acquire_bus(spi, portMAX_DELAY);
 
             // in half-duplex mode
             if ((devcfg.flags & 0x00000010) >> 4) {
-                if (write_len > 0) {
-                    t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+                if (!critical_mode) {
+                    if (write_len > 0) {
+                        t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
 
-                    t.length = write_len * 8; // transaction length is in bits
-                    write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
-                    if (write_buffer == NULL) {
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        ESP_LOGE(TAG, "Memory allocation failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                        t.length = write_len * 8; // transaction length is in bits
+                        write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
+                        if (write_buffer == NULL) {
+                            ret = ESPRESSIF_ERR_NO_MEM;
+                            ESP_LOGE(TAG, "Memory allocation failed");
+                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                            xSemaphoreGive(semaphore_task_notify);
+                            continue;
+                        }
+                        memcpy(write_buffer, &com_data_content[8], write_len);
+
+                        t.tx_buffer = write_buffer;
+
+                        ret = spi_device_transmit(spi, &t); // Transmit!
+                    }
+
+                    if (read_len > 0) {
+                        t.tx_buffer = NULL;
+                        t.length = 0;
+
+                        read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                        if (read_buffer == NULL) {
+                            ret = ESPRESSIF_ERR_NO_MEM;
+                            ESP_LOGE(TAG, "Memory allocation failed");
+                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                            xSemaphoreGive(semaphore_task_notify);
+                            continue;
+                        }
+                        memset(read_buffer, 0, read_len);
+
+                        t.rxlength = read_len * 8;
+                        t.rx_buffer = read_buffer;
+                        ret = spi_device_transmit(spi, &t);
+                    }
+
+                    // depress the single ringing in MOSI line after the transaction
+                    spi_transaction_t t_null = { 0 };
+                    spi_device_transmit(spi, &t_null);
+
+                } else {  // in critical mode
+
+                    if (write_len > 0 && read_len > 0) {
+                        counts = timeout / examine_period;
+
+                        for (uint32_t i = 0; i < counts; i += examine_period) {
+
+                            memset(&t, 0, sizeof(t));
+
+                            if (write_len > 0) {
+                                t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+
+                                t.length = write_len * 8; // transaction length is in bits
+                                write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
+                                if (write_buffer == NULL) {
+                                    ret = ESPRESSIF_ERR_NO_MEM;
+                                    ESP_LOGE(TAG, "Memory allocation failed");
+                                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                    xSemaphoreGive(semaphore_task_notify);
+                                    continue;
+                                }
+                                memcpy(write_buffer, &com_data_content[8], write_len);
+
+                                t.tx_buffer = write_buffer;
+
+                                ret = spi_device_transmit(spi, &t); // Transmit!
+                            }
+
+                            if (read_len > 0) {
+                                t.tx_buffer = NULL;
+                                t.length = 0;
+
+                                read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                                if (read_buffer == NULL) {
+                                    ret = ESPRESSIF_ERR_NO_MEM;
+                                    ESP_LOGE(TAG, "Memory allocation failed");
+                                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                    xSemaphoreGive(semaphore_task_notify);
+                                    continue;
+                                }
+                                memset(read_buffer, 0, read_len);
+
+                                t.rxlength = read_len * 8;
+                                t.rx_buffer = read_buffer;
+                                ret = spi_device_transmit(spi, &t);
+                            }
+
+                            // depress the single ringing in MOSI line after the transaction
+                            spi_transaction_t t_null = { 0 };
+                            spi_device_transmit(spi, &t_null);
+
+                            esp_rom_delay_us(examine_period * 1000);
+
+                            if (read_buffer[justice_index] == justice) {
+                                examine_result = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        ESP_LOGE(TAG, "Critical mode must have both write and read data");
+                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, MXDBG_ERR_SPI_INVALID_OPERATION);
                         xSemaphoreGive(semaphore_task_notify);
                         continue;
                     }
-                    memcpy(write_buffer, &com_data_content[8], write_len);
-
-                    t.tx_buffer = write_buffer;
-
-                    ret = spi_device_transmit(spi, &t); // Transmit!
                 }
-
-                if (read_len > 0) {
-                    // memset(&t, 0, sizeof(t));
-                    t.tx_buffer = NULL;
-                    t.length = 0;
-
-                    read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
-                    if (read_buffer == NULL) {
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        ESP_LOGE(TAG, "Memory allocation failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                    memset(read_buffer, 0, read_len);
-
-                    t.rxlength = read_len * 8;
-                    t.rx_buffer = read_buffer;
-                    ret = spi_device_transmit(spi, &t);
-                }
-
-                // depress the single ringing in MOSI line after the transaction
-                spi_transaction_t t_null = { 0 };
-                spi_device_transmit(spi, &t_null);
 
             }
             // not in half-duplex mode
@@ -1060,13 +1126,10 @@ void task_spi_write_read(void *pvParameters)
                     t.rx_buffer = read_buffer;
                 }
 
-                if (critical_mode)
-                {
-
+                if (critical_mode) {
                     counts = timeout / examine_period;
 
-                    for (uint32_t i = 0; i < counts; i+=examine_period)
-                    {
+                    for (uint32_t i = 0; i < counts; i += examine_period) {
                         ret = spi_device_transmit(spi, &t); // Transmit and receive
                         if (ret != ESP_OK) {
                             ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
@@ -1085,21 +1148,16 @@ void task_spi_write_read(void *pvParameters)
 
                             xSemaphoreGive(semaphore_task_notify);
                             continue;
-                        }
-                        else
-                        {
+                        } else {
                             esp_rom_delay_us(examine_period * 1000);
 
-                            if (read_buffer[justice_index] == justice)
-                            {
+                            if (read_buffer[justice_index] == justice) {
                                 examine_result = true;
                                 break;
                             }
                         }
-
                     }
-                }
-                else  // not in critical mode
+                } else // not in critical mode
                 {
                     ret = spi_device_transmit(spi, &t); // Transmit and receive
                     if (ret != ESP_OK) {
@@ -1121,18 +1179,14 @@ void task_spi_write_read(void *pvParameters)
                         continue;
                     }
                 }
-
             }
 
             spi_device_release_bus(spi); // When using SPI
 
-            if (critical_mode)
-            {
+            if (critical_mode) {
                 ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
                 data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
-            }
-            else
-            {
+            } else {
                 data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
             }
             xSemaphoreGive(semaphore_task_notify);
@@ -1399,7 +1453,7 @@ void task_pwm_config(void *pvParameters)
 void task_spi_read_image(void *pvParameters)
 {
     int ret = 0;
-    
+
     extern int paw33xx_get_image();
     extern uint8_t image_data[];
 
@@ -1667,7 +1721,6 @@ void app_main()
     // ESP_LOGI(TAG, "Free DMA heap size: %d bytes", heap_caps_get_free_size(MALLOC_CAP_DMA));
 
     while (1) {
-
         if (xSemaphoreTake(semaphore_reset_device, portMAX_DELAY) == pdTRUE) {
             ESP_LOGW(TAG, "Reset device");
 

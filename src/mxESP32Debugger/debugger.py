@@ -940,7 +940,7 @@ class Dbg:
         spi_config_data_temp.extend(self.__data_decompose(device_interface_flags))
         spi_config_data_temp.extend(self.__data_decompose(queue_size))
 
-        self.__hexdump(spi_config_data_temp)
+        # self.__hexdump(spi_config_data_temp)
 
         ret, data = self.__task_execute(self.task_cmd["TASK_SPI_CONFIG"], spi_config_data_temp)
         self.__check_ret_code(self.task_cmd["TASK_SPI_CONFIG"], ret)

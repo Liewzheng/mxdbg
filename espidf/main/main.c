@@ -40,7 +40,7 @@
  * MACROS
  *---------------------------------------------------------------------------*/
 
-#define COM_DATA_BUFFER_LENGTH 1024
+#define COM_DATA_BUFFER_LENGTH 2048
 static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
 
 #define COM_PROTOCOL_HEADER "mxdbg:"
@@ -1454,12 +1454,12 @@ void task_spi_read_image(void *pvParameters)
 {
     int ret = 0;
 
-    extern int paw33xx_get_image();
+    extern int paw33xx_get_image(uint16_t width, uint16_t height);
     extern uint8_t image_data[];
 
     uint16_t image_width = 0;
     uint16_t image_height = 0;
-    uint32_t image_size = 0;
+    size_t image_size = 0;
 
     while (1) {
         if (xSemaphoreTake(semaphore_spi_read_image, portMAX_DELAY) == pdTRUE) {
@@ -1473,7 +1473,7 @@ void task_spi_read_image(void *pvParameters)
 
             spi_device_acquire_bus(spi, portMAX_DELAY);
 
-            if (paw33xx_get_image() != 0) {
+            if (paw33xx_get_image(image_width, image_height) != 0) {
                 ret = MXDBG_ERR_SPI_READ_IMAGE_FAILED;
                 ESP_LOGE(TAG, "Get raw image failed");
                 data_pack(NULL, 0, TASK_SPI_READ_IMAGE, ret);

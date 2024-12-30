@@ -29,6 +29,7 @@ def __():
 def __(Dbg):
     dev = Dbg()
     dev.power_init()
+    dev.usb_config()
     return (dev,)
 
 
@@ -143,18 +144,18 @@ def __(Dbg):
 
 
 @app.cell
-def __(config, dev, paw3395_init, paw3395_switch_mode):
-    paw3395_init(config, dev)
-    paw3395_switch_mode(config, dev, 0)
-    return
-
-
-@app.cell
 def __(config, dev):
     reset_pin = 39
     dev.gpio_config(pin=reset_pin, mode=0x02, pull_up=True, pull_down=False)
     dev.power_control("spi", config["electronic"]["vdd_voltage"])
     return (reset_pin,)
+
+
+@app.cell
+def __(config, dev, paw3395_init, paw3395_switch_mode):
+    paw3395_init(config, dev)
+    paw3395_switch_mode(config, dev, 0)
+    return
 
 
 @app.cell(hide_code=True)
@@ -261,8 +262,9 @@ def __(Dbg, reset_pin, trange):
 def __(dev, reset_pin):
     dev.gpio_write_read(reset_pin, 0)
     dev.gpio_write_read(reset_pin, 1)
-    dev.spi_read_image(36,36)
-    return
+    _, raw_image = dev.spi_read_image(36,36)
+    print(len(raw_image))
+    return (raw_image,)
 
 
 @app.cell(hide_code=True)
@@ -277,7 +279,7 @@ def __(dev):
     dev.spi_config(
         freq=1_000_000,  # 1MHz
         miso_io_num=-1,  # the key point to config as a half duplex 3-wire mode
-        cs_ena_pretrans=1,
+        cs_ena_pretrans=1, 
         cs_ena_posttrans=1,
         device_interface_flags=(dev.spi_device["SPI_DEVICE_HALFDUPLEX"] | dev.spi_device["SPI_DEVICE_3WIRE"]),
     )

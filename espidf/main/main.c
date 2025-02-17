@@ -23,6 +23,7 @@
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "driver/spi_master.h"
+#include "driver/spi_slave.h"
 #include "driver/mcpwm_prelude.h"
 
 #include "esp_err.h"
@@ -63,8 +64,11 @@ void task_pwm_run_stop(void *pvParameters);
 void task_pwm_config(void *pvParameters);
 void task_spi_read_image(void *pvParameters);
 void task_usb_config(void *pvParameters);
+void task_usb_dump_buffer(void *pvParameters);
 
 void spi_callback(spi_transaction_t *t);
+void spi_slave_post_setup_cb(spi_slave_transaction_t *t);
+void spi_slave_post_trans_cb(spi_slave_transaction_t *t);
 
 /*-----------------------------------------------------------------------------
  * GLOBAL VARIABLES
@@ -92,8 +96,8 @@ SemaphoreHandle_t semaphore_reset_device;
 
 // USB
 
-uint8_t com_data_content[COM_DATA_BUFFER_LENGTH] = { 0 };
-uint8_t com_data_send_buffer[COM_DATA_BUFFER_LENGTH] = { 0 };
+uint8_t com_data_content[CONFIG_TINYUSB_CDC_RX_BUFSIZE] = { 0 };
+uint8_t com_data_send_buffer[CONFIG_TINYUSB_CDC_TX_BUFSIZE] = { 0 };
 
 bool usb_connected_state = false;
 uint64_t usb_data_rx_start_time = 0;
@@ -164,6 +168,17 @@ spi_device_interface_config_t devcfg = {
     .cs_ena_posttrans = 0,
     .cs_ena_pretrans = 0,
 };
+
+spi_slave_interface_config_t slvcfg = {
+    .spics_io_num = 15,
+    .flags = 0,
+    .queue_size = 3,
+    .mode = 0,
+    .post_setup_cb = spi_slave_post_setup_cb,
+    .post_trans_cb = spi_slave_post_trans_cb
+};
+
+uint8_t master_slave_mode = 0;
 
 /*-----------------------------------------------------------------------------
  * STATIC VARIABLES
@@ -340,39 +355,59 @@ void pwm_deinit(pwm_channel_t *channel)
     ESP_ERROR_CHECK(mcpwm_del_timer(channel->timer));
 }
 
-esp_err_t spi_init()
+esp_err_t spi_init(uint8_t master_slave_mode)
 {
     esp_err_t ret = 0;
 
-    ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI bus initialize failed");
-        return ret;
-    }
+    if (master_slave_mode == 0) {
+        ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI bus initialize failed");
+            return ret;
+        }
 
-    ret = spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI device add failed");
-        return ret;
+        ret = spi_bus_add_device(SPI2_HOST, &devcfg, &spi);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI device add failed");
+            return ret;
+        }
+    }
+    else if(master_slave_mode == 1)
+    {
+        ret = spi_slave_initialize(SPI2_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI slave initialize failed");
+            return ret;
+        }
     }
 
     return ret;
 }
 
-esp_err_t spi_deinit()
+esp_err_t spi_deinit(int master_slave_mode)
 {
     esp_err_t ret = 0;
 
-    ret = spi_bus_remove_device(spi);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI device remove failed");
-        return ret;
-    }
+    if (master_slave_mode == 0) {
+        ret = spi_bus_remove_device(spi);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI device remove failed");
+            return ret;
+        }
 
-    ret = spi_bus_free(SPI2_HOST);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "SPI bus free failed");
-        return ret;
+        ret = spi_bus_free(SPI2_HOST);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI bus free failed");
+            return ret;
+        }
+    }
+    else if(master_slave_mode == 1)
+    {
+        ret = spi_slave_free(SPI2_HOST);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "SPI slave free failed");
+            return ret;
+        }
     }
 
     return ret;
@@ -476,7 +511,7 @@ void tinyusb_cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
     ESP_LOGI(TAG, "Line state changed on channel %d: DTR:%d, RTS:%d", itf, dtr, rts);
 }
 
-void tiny_usb_init()
+void tiny_usb_cdc_init()
 {
     // ESP_LOGI(TAG, "USB initialization");
     const tinyusb_config_t tusb_cfg = {
@@ -511,6 +546,18 @@ void tiny_usb_init()
 }
 
 void spi_callback(spi_transaction_t *t)
+{
+    // Should not put any suspendable function here
+    // Or it will cause a crash
+}
+
+void spi_slave_post_setup_cb(spi_slave_transaction_t *t)
+{
+    // Should not put any suspendable function here
+    // Or it will cause a crash
+}
+
+void spi_slave_post_trans_cb(spi_slave_transaction_t *t)
 {
     // Should not put any suspendable function here
     // Or it will cause a crash
@@ -962,11 +1009,13 @@ void task_spi_write_read(void *pvParameters)
             }
 
             if (read_len > write_len) {
+                if (master_slave_mode == 0) {
                 ret = MXDBG_ERR_SPI_READ_LEN_TOO_LONG;
                 ESP_LOGE(TAG, "Read length should not be larger than write length");
                 data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
+                }
             }
 
             critical_mode = com_data_content[8 + write_len] & 0x01 ? true : false;
@@ -980,6 +1029,7 @@ void task_spi_write_read(void *pvParameters)
                          critical_mode ? "True" : "False", justice, justice_index, examine_period, timeout);
             }
 
+            if (master_slave_mode == 0){
             spi_device_acquire_bus(spi, portMAX_DELAY);
 
             // in half-duplex mode
@@ -1183,11 +1233,91 @@ void task_spi_write_read(void *pvParameters)
 
             spi_device_release_bus(spi); // When using SPI
 
+            }
+            else if (master_slave_mode == 1) // receive data from master only
+            {
+                ESP_LOGI(TAG, "SPI slave mode");
+
+                spi_slave_transaction_t t;
+                memset(&t, 0, sizeof(t));
+
+                if (read_len > 0) {
+                    // ESP_LOGI(TAG, "SPI slave read length: %ld", read_len);
+                    uint8_t *read_buffer = (uint8_t *)heap_caps_malloc(read_len + 1, MALLOC_CAP_DMA);
+                    if (read_buffer == NULL) {
+                        ret = ESPRESSIF_ERR_NO_MEM;
+                        ESP_LOGE(TAG, "Memory allocation failed");
+                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                        xSemaphoreGive(semaphore_task_notify);
+                        continue;
+                    }
+                    memset(read_buffer, 0, read_len);
+
+                    t.rx_buffer = read_buffer;
+                    t.length = read_len * 8; // transaction length is in bits
+                }
+
+                // split data access according to the max_transfer_sz
+
+                if (read_len > buscfg.max_transfer_sz)
+                {
+                    uint32_t read_len_temp = read_len;
+                    do
+                    {
+                        t.length = (read_len_temp > buscfg.max_transfer_sz ? buscfg.max_transfer_sz : read_len_temp) * 8;
+                        t.rx_buffer += (read_len - read_len_temp);
+                        ESP_LOGI(TAG, "t.length: %d", t.length);
+
+                        ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
+                        if (ret != ESP_OK)
+                        {
+                            ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                            ESP_LOGE(TAG, "SPI transaction failed");
+                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                            if (read_len_temp > 0) {
+                                heap_caps_free(read_buffer);
+                                read_buffer = NULL;
+                            }
+
+                            xSemaphoreGive(semaphore_task_notify);
+                            continue;
+                        }
+
+                        read_len_temp -= buscfg.max_transfer_sz;
+
+                        ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
+
+                    } while (read_len_temp > 0);
+
+                }
+                else
+                {
+                    ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
+                    if (ret != ESP_OK)
+                    {
+                        ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                        ESP_LOGE(TAG, "SPI transaction failed");
+                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                        if (read_len > 0) {
+                            heap_caps_free(read_buffer);
+                            read_buffer = NULL;
+                        }
+
+                        xSemaphoreGive(semaphore_task_notify);
+                        continue;
+                    }
+                }
+                    
+            }
+
             if (critical_mode) {
                 ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
                 data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
             } else {
                 data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
+                // ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
             }
             xSemaphoreGive(semaphore_task_notify);
 
@@ -1238,8 +1368,9 @@ void task_spi_config(void *pvParameters)
             int spics_io_num = DATA_SYNTHESIS_4_BYTES(pCOM + 64);
             uint32_t device_interface_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 68);
             int queue_size = DATA_SYNTHESIS_4_BYTES(pCOM + 72);
+            uint8_t master_slave_mode_latest = pCOM[76];
 
-            ret = spi_deinit();
+            ret = spi_deinit(master_slave_mode);
             if (ret != ESP_OK) {
                 ret = MXDBG_ERR_SPI_DEINIT_FAILED;
                 ESP_LOGE(TAG, "Deinit spi failed.");
@@ -1247,6 +1378,7 @@ void task_spi_config(void *pvParameters)
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
             }
+            master_slave_mode = master_slave_mode_latest;
 
             // ESP_LOGI(TAG, "clock speed hz: %d", clock_speed_hz);
             // ESP_LOGI(TAG, "MISO_IO_NUM: %d", miso_io_num);
@@ -1265,6 +1397,7 @@ void task_spi_config(void *pvParameters)
             buscfg.isr_cpu_id = isr_cpu_id;
             buscfg.intr_flags = intr_flags;
 
+            if (master_slave_mode == 0) {
             devcfg.command_bits = command_bits;
             devcfg.address_bits = address_bits;
             devcfg.dummy_bits = dummy_bits;
@@ -1277,8 +1410,15 @@ void task_spi_config(void *pvParameters)
             devcfg.spics_io_num = spics_io_num;
             devcfg.flags = device_interface_flags;
             devcfg.queue_size = queue_size;
+            }
+            else if (master_slave_mode == 1){
+                slvcfg.spics_io_num = spics_io_num;
+                slvcfg.flags = device_interface_flags;
+                slvcfg.queue_size = queue_size;
+                slvcfg.mode = mode;
+            }
 
-            ret = spi_init();
+            ret = spi_init(master_slave_mode);
             if (ret != ESP_OK) {
                 ret = MXDBG_ERR_SPI_INIT_FAILED;
                 ESP_LOGE(TAG, "Initialize spi failed.");
@@ -1511,7 +1651,44 @@ void task_usb_config(void *pvParameters)
  * MAIN FUNCTION
  *---------------------------------------------------------------------------*/
 
-void app_main()
+uint8_t get_usb_mode(void)
+{
+    esp_err_t ret = ESP_OK;
+    gpio_config_t mode_high = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_1),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config_t mode_low = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_5),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    ret = gpio_config(&mode_high);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mode_high config failed");
+        return 0xFF;
+    }
+    ret = gpio_config(&mode_low);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "mode_low config failed");
+        return 0xFF;
+    }
+
+    // delay 10ms
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    uint8_t mode = 0;
+
+    mode = gpio_get_level(GPIO_NUM_5) << 1 | gpio_get_level(GPIO_NUM_1);
+    return mode;
+}
+
+void usb_cdc_mxdbg_main()
 {
     pwm_channels[0] = (pwm_channel_t){
         .timer = NULL,
@@ -1616,10 +1793,10 @@ void app_main()
         .run_state = false
     };
 
-    tiny_usb_init();
+    tiny_usb_cdc_init();
     i2c_init(0);
     i2c_init(1);
-    spi_init();
+    spi_init(master_slave_mode);
     pwm_init(&(pwm_channels[0]));
     pwm_init(&(pwm_channels[1]));
     pwm_init(&(pwm_channels[2]));
@@ -1718,7 +1895,8 @@ void app_main()
 
     xTaskCreate(task_usb_config, "task_usb_config", 1024, NULL, 4, NULL);
 
-    // ESP_LOGI(TAG, "Free DMA heap size: %d bytes", heap_caps_get_free_size(MALLOC_CAP_DMA));
+    ESP_LOGI(TAG, "Free DMA heap size: %d bytes", heap_caps_get_free_size(MALLOC_CAP_DMA));
+    ESP_LOGI(TAG, "Free internal heap size: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
     while (1) {
         if (xSemaphoreTake(semaphore_reset_device, portMAX_DELAY) == pdTRUE) {
@@ -1728,7 +1906,7 @@ void app_main()
             pwm_deinit(&(pwm_channels[1]));
             pwm_deinit(&(pwm_channels[2]));
 
-            spi_deinit();
+            spi_deinit(master_slave_mode);
             i2c_deinit(0);
             i2c_deinit(1);
 
@@ -1744,7 +1922,138 @@ void app_main()
     pwm_deinit(&(pwm_channels[1]));
     pwm_deinit(&(pwm_channels[2]));
 
-    spi_deinit();
+    spi_deinit(master_slave_mode);
     i2c_deinit(0);
     i2c_deinit(1);
+}
+
+void tca9555pwr_init()
+{
+    esp_err_t ret = ESP_OK;
+    i2c_config_t *i2c_conf = &i2c_conf1;
+    i2c_conf->sda_io_num = GPIO_NUM_41;
+    i2c_conf->scl_io_num = GPIO_NUM_42;
+
+    ret = i2c_init(1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2C config failed");
+        ret = MXDBG_ERR_I2C_INIT_FAILED;
+    }
+
+    // delay 10ms
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    uint16_t bit_mask = 0x0000;
+
+    uint8_t write_list[3] = {0x00, 0x00, 0x00};
+    uint8_t read_list[2] = {0x00, 0x00};
+
+    for(uint8_t addr = 0x00; addr <= 0x7F; addr++) {
+        ret = i2c_master_write_read_device(1, addr, write_list, 1, read_list, 1, 1000/portTICK_PERIOD_MS);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Found device at address: 0x%02X", addr);
+        }
+    }
+
+    uint8_t reg_list[][3] = {
+        {0x06, 0xFF, 0xFF}, // set all pins as input mode
+        {0x04, 0x00, 0x00}, // disable polarity inversion
+        {0x02, 0x00, 0x00}, // set all pins as low level
+    };
+
+    for (int i = 0; i < sizeof(reg_list)/sizeof(reg_list[0]); i++) {
+        ret = i2c_master_write_to_device(1, 0x20, reg_list[i], 3, 1000/portTICK_PERIOD_MS);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "TCA9555PWR write failed.");
+            return;
+        }
+    }
+
+    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000/portTICK_PERIOD_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "TCA9555PWR read failed.");
+        return;
+    }
+
+    bit_mask = read_list[1] << 8 | read_list[0];
+    bit_mask &= 0xFC00;
+
+    write_list[1] = bit_mask & 0x00FF;
+    write_list[2] = (bit_mask & 0xFF00) >> 8;
+
+    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000/portTICK_PERIOD_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "TCA9555PWR write failed.");
+        return;
+    }
+
+    write_list[0] = 0x02;
+
+    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000/portTICK_PERIOD_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "TCA9555PWR write failed.");
+        return;
+    }
+
+    bit_mask = read_list[1] << 8 | read_list[0];
+    bit_mask |= 0x0002;
+    bit_mask &= 0xFFFA;
+
+    write_list[1] = bit_mask & 0x00FF;
+    write_list[2] = (bit_mask & 0xFF00) >> 8;
+
+    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000/portTICK_PERIOD_MS);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "TCA9555PWR write failed.");
+        return;
+    }
+}
+
+void usb_hid_main()
+{
+    esp_err_t ret = ESP_OK;
+
+    ret = spi_init(master_slave_mode);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Initialize spi failed.");
+        ret = MXDBG_ERR_SPI_INIT_FAILED;
+    }
+
+    tca9555pwr_init();
+    extern int paw33xx_main(void);
+
+    paw33xx_main();
+
+    ret = spi_deinit(master_slave_mode);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Deinit spi failed.");
+        ret = MXDBG_ERR_SPI_DEINIT_FAILED;
+    }
+}
+
+void app_main()
+{
+    enum usb_mode
+    {
+        USB_MODE_CDC= 0,  // 00
+        USB_MODE_HID,
+    };
+
+    uint8_t usb_mode = get_usb_mode();
+
+    switch (usb_mode)
+    {
+        case USB_MODE_CDC:
+            ESP_LOGI(TAG, "USB mode: CDC");
+            usb_cdc_mxdbg_main();
+            break;
+
+        case USB_MODE_HID:
+            ESP_LOGI(TAG, "USB mode: HID");
+            usb_hid_main();
+            break;
+            
+        default:
+            break;
+    }
 }

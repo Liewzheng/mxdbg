@@ -287,7 +287,7 @@ class Dbg:
     def __write(self, data) -> None:
         self.__client.write(data)
 
-    def __task_execute(self, cmd, data: list) -> tuple:
+    def __task_execute(self, cmd, data: list, **kwargs) -> tuple:
 
         write_data = self.__data_pack(cmd, data)
 
@@ -296,7 +296,7 @@ class Dbg:
         except Exception as e:
             raise ValueError(f"Failed to write data: {e}")
 
-        read_data = self.__read()
+        read_data = self.__read(**kwargs)
 
         ret, temp_data = self.__data_unpack(cmd, read_data)
 
@@ -797,14 +797,14 @@ class Dbg:
     def spi_write_read(self, write_list: list, read_length: int, 
                        critical_mode:bool=False, 
                        justice: int = 0x00, justice_index:int = 1, 
-                       timeout: int = 50, examine_period:int = 1) -> tuple:
+                       spi_timeout: int = 50, examine_period:int = 1, **kwargs) -> tuple:
         '''
         @brief Write and read data from SPI slave device. (The default SPI pins are MISO: `12`, MOSI: `13`, SCLK: `14`, CS: `15`.)
         @param write_list: Data to write to SPI slave device. (It should be a list of bytes. e.g., `[0x00, 0x01]` or `[]`.)
         @param read_length: Length of data to read from SPI slave device.
         @param critical_mode: Critical mode. (`True`: Enable, `False`: Disable.)
         @param justice: The correct value to examine the data read from spi is correct or not. (Default is `0x00`.)
-        @param timeout: Timeout in ms. (Default is `50`.)
+        @param spi_timeout: Timeout in ms. (Default is `50`.)
         @param examine_period: The period to examine the data read from spi. (Default is `1`.)
         @return: Data read from SPI slave device.
         '''
@@ -815,15 +815,16 @@ class Dbg:
         justice = ctypes.c_uint8(justice).value
         justice_index = ctypes.c_uint8(justice_index).value
         examine_period = ctypes.c_uint8(examine_period).value
-        timeout = ctypes.c_uint8(timeout).value
+        spi_timeout = ctypes.c_uint8(spi_timeout).value
 
         if (write_len == 0) and (read_len == 0):
             logger.error("Write length and read length should not be zero.")
             return False, None
         else:
-            if read_len > write_len:
-                logger.error("Read length should not be larger than write length.")
-                return False, None
+            if self.spi_master_slave_mode == 0:
+                if read_len > write_len:
+                    logger.error("Read length should not be larger than write length.")
+                    return False, None
             
         if critical_mode and (justice_index > read_len - 1):
             logger.error(f"Justice index {justice_index} should not be larger than read length {read_len}.")
@@ -835,9 +836,9 @@ class Dbg:
                          (read_len & 0xFF000000) >> 24, (read_len & 0x00FF0000) >> 16,
                          (read_len & 0x0000FF00) >> 8, (read_len & 0x000000FF) >> 0]
         spi_data_temp += write_list
-        spi_data_temp += [critical_mode, justice, justice_index, examine_period, timeout]
+        spi_data_temp += [critical_mode, justice, justice_index, examine_period, spi_timeout]
 
-        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp)
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp, **kwargs)
         
 
         self.__check_ret_code(self.task_cmd["TASK_SPI_WRITE_READ"], ret)
@@ -872,6 +873,7 @@ class Dbg:
                    input_delay_ns: int = 0,
                    device_interface_flags: int = 0,
                    queue_size: int = 7,
+                   master_slave_mode: int = 0
                    ) -> tuple:
         '''
         @brief Configure SPI.
@@ -900,6 +902,7 @@ class Dbg:
         @param input_delay_ns: Input delay in ns. (Default is `0`.)
         @param device_interface_flags: Device interface flags. (Default is `0`. Set `(SPI_DEVICE_HALFDUPLEX | SPI_DEVICE_3WIRE)` if 3-wired half duplex mode.
         @param queue_size: Queue size. Default is `7`.)
+        @param master_slave_mode: Master/Slave mode. (`0`: Master, `1`: Slave. Default is `0`.)
         @return: Return True if success, False otherwise.
         '''
 
@@ -939,6 +942,9 @@ class Dbg:
         spi_config_data_temp.extend(self.__data_decompose(cs_io_num))
         spi_config_data_temp.extend(self.__data_decompose(device_interface_flags))
         spi_config_data_temp.extend(self.__data_decompose(queue_size))
+        spi_config_data_temp.extend(self.__data_decompose(master_slave_mode, 1))
+        
+        self.spi_master_slave_mode = master_slave_mode
 
         # self.__hexdump(spi_config_data_temp)
 

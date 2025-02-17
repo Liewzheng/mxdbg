@@ -16,28 +16,30 @@
  *---------------------------------------------------------------------------*/
 typedef enum {
     TASK_IDLE = 0,
-    TASK_I2C_WRITE_READ = 1,
-    TASK_I2C_CONFIG = 2,
-    TASK_GPIO_WRITE_READ = 3,
-    TASK_GPIO_CONFIG = 4,
-    TASK_SPI_WRITE_READ = 5,
-    TASK_SPI_CONFIG = 6,
-    TASK_PWM_RUN_STOP = 7,
-    TASK_PWM_CONFIG = 8,
-    TASK_SPI_READ_IMAGE = 9,
-    TASK_USB_CONFIG = 0xF0,
-    TASK_RESET_DEVICE = 0xF1,
+    TASK_I2C_WRITE_READ = 0x01,
+    TASK_I2C_CONFIG = 0x02,
+    TASK_GPIO_WRITE_READ = 0x03,
+    TASK_GPIO_CONFIG = 0x04,
+    TASK_SPI_WRITE_READ = 0x05,
+    TASK_SPI_CONFIG = 0x06,
+    TASK_PWM_RUN_STOP = 0x07,
+    TASK_PWM_CONFIG = 0x08,
+    TASK_HIGH_SPEED_PWM_CONFIG = 0x09,
+    TASK_HIGH_SPEED_PWM_RUN_STOP = 0x0A,
+    TASK_SPI_READ_IMAGE = 0xA0,
+    TASK_USB_CONFIG = 0xE0,
+    TASK_RESET_DEVICE = 0xF0,
 } task_cmd_t;
 
 /*-----------------------------------------------------------------------------
  * MACROS
  *---------------------------------------------------------------------------*/
-#define VERSION_MAJOR 1
-#define VERSION_MINOR 0
+#define VERSION_MAJOR            1
+#define VERSION_MINOR            0
 #define ERR_SYNTHESIS(type, ret) ((VERSION_MAJOR << 24) | (VERSION_MINOR << 16) | (uint8_t)type << 8 | (uint8_t)ret)
 
 /* Definitions for error constants. */
-#define ESPRESSIF_OK   0x00  /*!< esp_err_t value indicating success (no error) */
+#define ESPRESSIF_OK   0x00       /*!< esp_err_t value indicating success (no error) */
 #define ESPRESSIF_FAIL 0xFFFFFFFF /*!< Generic esp_err_t code indicating failure */
 
 #define ESPRESSIF_ERR_NO_MEM           0x101 /*!< Out of memory */

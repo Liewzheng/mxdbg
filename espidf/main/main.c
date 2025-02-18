@@ -49,6 +49,9 @@ static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
 #define DATA_SYNTHESIS_4_BYTES(data) ((*(data + 0)) << 24 | (*(data + 1)) << 16 | (*(data + 2)) << 8 | (*(data + 3)))
 #define DATA_SYNTHESIS_2_BYTES(data) ((*(data + 0)) << 8 | (*(data + 1)))
 
+// for spi slave ncs
+#define GPIO_HANDSHAKE      2
+
 /*-----------------------------------------------------------------------------
  * FUNCTION PROTOTYPES
  *---------------------------------------------------------------------------*/
@@ -355,6 +358,19 @@ void pwm_deinit(pwm_channel_t *channel)
     ESP_ERROR_CHECK(mcpwm_del_timer(channel->timer));
 }
 
+void spi_handshake_init(void)
+{
+    //Configuration for the handshake line
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = BIT64(GPIO_HANDSHAKE),
+    };
+
+    //Configure handshake line as output
+    gpio_config(&io_conf);
+}
+
 esp_err_t spi_init(uint8_t master_slave_mode)
 {
     esp_err_t ret = 0;
@@ -374,6 +390,13 @@ esp_err_t spi_init(uint8_t master_slave_mode)
     }
     else if(master_slave_mode == 1)
     {
+
+        spi_handshake_init();        
+
+        gpio_set_pull_mode(buscfg.mosi_io_num, GPIO_PULLUP_ONLY);
+        gpio_set_pull_mode(buscfg.sclk_io_num, GPIO_PULLUP_ONLY);
+        gpio_set_pull_mode(slvcfg.spics_io_num, GPIO_PULLUP_ONLY);
+
         ret = spi_slave_initialize(SPI2_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SPI slave initialize failed");
@@ -553,14 +576,12 @@ void spi_callback(spi_transaction_t *t)
 
 void spi_slave_post_setup_cb(spi_slave_transaction_t *t)
 {
-    // Should not put any suspendable function here
-    // Or it will cause a crash
+    gpio_set_level(GPIO_HANDSHAKE, 1);
 }
 
 void spi_slave_post_trans_cb(spi_slave_transaction_t *t)
 {
-    // Should not put any suspendable function here
-    // Or it will cause a crash
+    gpio_set_level(GPIO_HANDSHAKE, 0);
 }
 
 /*
@@ -1234,82 +1255,44 @@ void task_spi_write_read(void *pvParameters)
             spi_device_release_bus(spi); // When using SPI
 
             }
-            else if (master_slave_mode == 1) // receive data from master only
+            else if (master_slave_mode == 1) // treat esp32s3 as a spi slave, then receive data from master only
             {
-                ESP_LOGI(TAG, "SPI slave mode");
-
                 spi_slave_transaction_t t;
                 memset(&t, 0, sizeof(t));
+                
+                uint8_t bytes_aligned_size = 128;
+                size_t malloc_size = bytes_aligned_size - read_len % bytes_aligned_size + read_len;
 
-                if (read_len > 0) {
-                    // ESP_LOGI(TAG, "SPI slave read length: %ld", read_len);
-                    uint8_t *read_buffer = (uint8_t *)heap_caps_malloc(read_len + 1, MALLOC_CAP_DMA);
-                    if (read_buffer == NULL) {
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        ESP_LOGE(TAG, "Memory allocation failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
+                uint8_t *read_buffer = (uint8_t *)heap_caps_malloc(malloc_size, MALLOC_CAP_DMA);  
+                if (read_buffer == NULL) {
+                    ret = ESPRESSIF_ERR_NO_MEM;
+                    ESP_LOGE(TAG, "Memory allocation failed");
+                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                    xSemaphoreGive(semaphore_task_notify);
+                    continue;
+                }
+                memset(read_buffer, 0, malloc_size);
+
+                t.rx_buffer = read_buffer;
+                t.length = read_len * 8; // transaction length is in bits
+
+                // pull down cs
+
+                ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
+                if (ret != ESP_OK) {
+                    ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                    ESP_LOGE(TAG, "SPI transaction failed");
+                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                    if (read_buffer) {
+                        heap_caps_free(read_buffer);
+                        read_buffer = NULL;
                     }
-                    memset(read_buffer, 0, read_len);
 
-                    t.rx_buffer = read_buffer;
-                    t.length = read_len * 8; // transaction length is in bits
+                    xSemaphoreGive(semaphore_task_notify);
+                    continue;
                 }
-
-                // split data access according to the max_transfer_sz
-
-                if (read_len > buscfg.max_transfer_sz)
-                {
-                    uint32_t read_len_temp = read_len;
-                    do
-                    {
-                        t.length = (read_len_temp > buscfg.max_transfer_sz ? buscfg.max_transfer_sz : read_len_temp) * 8;
-                        t.rx_buffer += (read_len - read_len_temp);
-                        ESP_LOGI(TAG, "t.length: %d", t.length);
-
-                        ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
-                        if (ret != ESP_OK)
-                        {
-                            ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
-                            ESP_LOGE(TAG, "SPI transaction failed");
-                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-
-                            if (read_len_temp > 0) {
-                                heap_caps_free(read_buffer);
-                                read_buffer = NULL;
-                            }
-
-                            xSemaphoreGive(semaphore_task_notify);
-                            continue;
-                        }
-
-                        read_len_temp -= buscfg.max_transfer_sz;
-
-                        ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
-
-                    } while (read_len_temp > 0);
-
-                }
-                else
-                {
-                    ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
-                    if (ret != ESP_OK)
-                    {
-                        ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
-                        ESP_LOGE(TAG, "SPI transaction failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-
-                        if (read_len > 0) {
-                            heap_caps_free(read_buffer);
-                            read_buffer = NULL;
-                        }
-
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                }
-                    
+            
             }
 
             if (critical_mode) {
@@ -1317,7 +1300,7 @@ void task_spi_write_read(void *pvParameters)
                 data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
             } else {
                 data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
-                // ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
+                ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
             }
             xSemaphoreGive(semaphore_task_notify);
 

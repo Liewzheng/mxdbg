@@ -31,6 +31,7 @@ class Dbg:
         self.__crc_enable = True
         self.__mxdbg_header_file = None
         self.__mxdbg_toml_path = None
+        self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE = 2048
         
         self.version, self.task_cmd, self.__error_map = self.__parse_and_map()
 
@@ -257,10 +258,18 @@ class Dbg:
     def disconnect(self) -> None:
         self.__client.close()
 
-    def __read(self, timeout=2) -> bytearray:
+    def __read(self, timeout=2, massive_mode:bool=False, debug_mode:bool=False) -> bytearray:
 
         data = bytearray()
         start_time = time.time()
+        
+        if massive_mode:
+            package_count = (int)(self.__read_length / (self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE - 15))
+            tail_size = self.__read_length % (self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE - 15)
+            total_size = package_count * self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE + tail_size + 15
+            
+        if debug_mode:   
+            logger.debug(f"Package count: {package_count}, Tail size: {tail_size}, Total size: {total_size}")
 
         while True:
 
@@ -269,16 +278,31 @@ class Dbg:
                 if len(data) == 0:
                     raise TimeoutError("Data read timeout. No data received.")
                 else:
-                    raise TimeoutError("Data read timeout. Data received: {}".format(data))
+                    # if debug_mode:
+                    #     logger.error(f"Data received: {len(data)}")
+                    raise TimeoutError("Data read timeout. Data received ({}): {}".format(len(data), data))
 
             if self.__client.in_waiting > 0:
 
                 temp_data = self.__client.read(self.__client.in_waiting)
+                
+                if debug_mode:
+                    if len(temp_data) > 0:
+                        self.__hexdump(temp_data)
+                    
                 data += temp_data
 
             if len(data) >= 5:
-                if self.__check_crc(data) and (data[:5] == bytearray("mxdbg", "utf-8")):
-                    break
+                if not massive_mode:
+                    if self.__check_crc(data) and (data[:5] == bytearray("mxdbg", "utf-8")):
+                        break
+                else:
+                    if self.__check_crc(data) and (data[:5] == bytearray("mxdbg", "utf-8")):
+
+                        if len(data) >= total_size:
+                            if debug_mode:
+                                logger.debug(f"Data received: {len(data)}")
+                            break
 
             time.sleep(0.01)
 
@@ -287,7 +311,7 @@ class Dbg:
     def __write(self, data) -> None:
         self.__client.write(data)
 
-    def __task_execute(self, cmd, data: list, **kwargs) -> tuple:
+    def __task_execute(self, cmd, data: list, massive_mode:bool=False, **kwargs) -> tuple:
 
         write_data = self.__data_pack(cmd, data)
 
@@ -296,16 +320,19 @@ class Dbg:
         except Exception as e:
             raise ValueError(f"Failed to write data: {e}")
 
-        read_data = self.__read(**kwargs)
+        read_data = self.__read(massive_mode=massive_mode, **kwargs)
 
-        ret, temp_data = self.__data_unpack(cmd, read_data)
+        if not massive_mode:
+            ret, temp_data = self.__data_unpack(cmd, read_data)
+        else:
+            ret, temp_data = self.__massive_data_unpack(cmd, read_data)
 
         return ret, temp_data
 
     def __data_decompose(self, data: int, bytes_num: int = 4) -> tuple:
         return [(data >> (8 * (bytes_num - 1 - i))) & 0xFF for i in range(bytes_num)]
 
-    def __hexdump(self, data: bytearray, base_address=0x3fc9900c) -> None:
+    def __hexdump(self, data: bytearray) -> None:
 
         logger.debug('hex:')
 
@@ -378,6 +405,27 @@ class Dbg:
         temp_data += bytearray([high, low])
 
         return temp_data
+    
+    def __massive_data_unpack(self, cmd, data: bytearray) -> tuple:
+        
+        # seperate data by self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE
+        
+        with open("usb_data.txt", "w") as f:
+            for d in data:
+                f.write(f"{d:02X} ")
+        
+        pack_list = bytearray()
+        
+        for i in range(0, len(data), self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE):
+            try:
+                ret, temp_data = self.__data_unpack(cmd, data[i:i+self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE])
+                pack_list+=temp_data
+            except Exception as e:
+                logger.error(f"Error: {e}")
+                
+        pack_list = list(pack_list) if pack_list is not None else None
+        
+        return ret, pack_list
 
     def __data_unpack(self, cmd, data: bytearray) -> tuple:
         '''
@@ -501,7 +549,7 @@ class Dbg:
 
         return error_map
 
-    def __compute_error_code(self, version_major, version_minor, task_id, ret_code) -> int:
+    def __compute_error_code(self, version_major:int, version_minor:int, task_id:int, ret_code:int) -> int:
         """Compute the error code based on task_id and ret_code."""
         return ((version_major << 24) | (version_minor << 16) | (task_id << 8) | ret_code)
 
@@ -809,6 +857,8 @@ class Dbg:
         @return: Data read from SPI slave device.
         '''
 
+        self.__read_length = read_length
+
         write_len = ctypes.c_uint32(len(write_list)).value
         read_len = ctypes.c_uint32(read_length).value
         critical_mode = ctypes.c_uint8(0x01 if critical_mode else 0x00).value
@@ -838,9 +888,8 @@ class Dbg:
         spi_data_temp += write_list
         spi_data_temp += [critical_mode, justice, justice_index, examine_period, spi_timeout]
 
-        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp, **kwargs)
+        ret, data = self.__task_execute(self.task_cmd["TASK_SPI_WRITE_READ"], spi_data_temp, massive_mode=(True if read_length > self.__CONFIG_TINYUSB_CDC_TX_BUFSIZE else False), **kwargs)
         
-
         self.__check_ret_code(self.task_cmd["TASK_SPI_WRITE_READ"], ret)
 
         if ret == 0:
@@ -926,7 +975,7 @@ class Dbg:
         spi_config_data_temp.extend(self.__data_decompose(data5_io_num))
         spi_config_data_temp.extend(self.__data_decompose(data6_io_num))
         spi_config_data_temp.extend(self.__data_decompose(data7_io_num))
-        spi_config_data_temp.extend(self.__data_decompose(max_transfer_sz, 2))
+        spi_config_data_temp.extend(self.__data_decompose(max_transfer_sz))
         spi_config_data_temp.extend(self.__data_decompose(common_bus_flags))
         spi_config_data_temp.extend(self.__data_decompose(isr_cpu_id, 1))
         spi_config_data_temp.extend(self.__data_decompose(intr_flags))

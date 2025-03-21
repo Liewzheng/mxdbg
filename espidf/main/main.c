@@ -205,36 +205,39 @@ static inline void crc16(uint8_t *data, size_t len, uint8_t *crc_high, uint8_t *
     *crc_low = crc & 0xFF;
 }
 
-static inline void data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t cmd, int ret)
+void data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t cmd, int ret)
 {
     const char *header = COM_PROTOCOL_HEADER;
     size_t pos = 0;
     uint8_t crc_high = 0, crc_low = 0;
 
+    // 1. 添加 header, sizeof(header) = 5
     for (size_t i = 0; i < strlen(header); i++) {
         com_data_send_buffer[pos++] = header[i];
     }
 
-    // 2. 添加 cmd 和 ret 值
+    // 2. 添加 cmd 和 ret 值, sizeof(cmd+':') = 2
     com_data_send_buffer[pos++] = (uint8_t)cmd; // cmd as uint8_t
     com_data_send_buffer[pos++] = ':';          // 分隔符
 
-    // 3. 添加 ret 值
+    // 3. 添加 ret 值, sizeof(ret+':') = 5
     com_data_send_buffer[pos++] = (ret & 0xFF000000) >> 24;
     com_data_send_buffer[pos++] = (ret & 0x00FF0000) >> 16;
     com_data_send_buffer[pos++] = (ret & 0x0000FF00) >> 8;
     com_data_send_buffer[pos++] = (ret & 0x000000FF);
     com_data_send_buffer[pos++] = ':'; // 分隔符
 
-    // 4. add data_list
-    if (data_length > 0 && data_sent != NULL) {
-        for (size_t i = 0; i < data_length; i++) {
-            com_data_send_buffer[pos++] = data_sent[i];
-        }
+    // 4. add data_list, sizeof(data_list) = data_length
+    // 需要小于 COM_DATA_BUFFER_LENGTH - (5 + 2 + 5 + 3)，即 2048 - 16 = 2032
 
+    if (data_length > 0 && data_sent != NULL)
+    {
+        memcpy((uint8_t *)(com_data_send_buffer + pos), (const uint8_t *)data_sent, data_length);
+        pos += data_length;
         com_data_send_buffer[pos++] = ':'; // 分隔符
     }
 
+    // 5. 添加 crc 校验, sizeof(crc) = 2
     if (crc_enable) {
         crc16(com_data_send_buffer, pos, &crc_high, &crc_low);
     }
@@ -245,7 +248,23 @@ static inline void data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t 
     tx_size = pos;
 }
 
-static inline int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *content,
+void massive_data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t cmd, int ret)
+{
+    crc_enable = false;
+
+    size_t package_size = CONFIG_TINYUSB_CDC_TX_BUFSIZE - 16; // 2033
+    size_t package_count = (data_length % package_size != 0) ? (data_length / package_size + 1) : data_length / package_size;
+
+    for (size_t i = 0; i < package_count; i++) {
+        size_t data_size = (i == package_count - 1) ? (data_length % package_size) : package_size;
+        data_pack((uint8_t *)(data_sent + i * package_size), data_size , cmd, ret);
+        xSemaphoreGive(semaphore_task_notify);
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *content,
                               size_t *content_length)
 {
     size_t pos = 0;
@@ -285,6 +304,8 @@ static inline int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd
 
     return ESP_OK;
 }
+
+
 
 esp_err_t i2c_init(i2c_port_t port)
 {
@@ -1263,7 +1284,7 @@ void task_spi_write_read(void *pvParameters)
                 uint8_t bytes_aligned_size = 128;
                 size_t malloc_size = bytes_aligned_size - read_len % bytes_aligned_size + read_len;
 
-                uint8_t *read_buffer = (uint8_t *)heap_caps_malloc(malloc_size, MALLOC_CAP_DMA);  
+                read_buffer = (uint8_t *)heap_caps_malloc(malloc_size, MALLOC_CAP_DMA);  
                 if (read_buffer == NULL) {
                     ret = ESPRESSIF_ERR_NO_MEM;
                     ESP_LOGE(TAG, "Memory allocation failed");
@@ -1277,6 +1298,8 @@ void task_spi_write_read(void *pvParameters)
                 t.length = read_len * 8; // transaction length is in bits
 
                 // pull down cs
+
+                ESP_LOGI(TAG, "MAX_TRANSFER_SZ: %d", buscfg.max_transfer_sz);
 
                 ret = spi_slave_transmit(SPI2_HOST, &t, portMAX_DELAY);
                 if (ret != ESP_OK) {
@@ -1293,16 +1316,28 @@ void task_spi_write_read(void *pvParameters)
                     continue;
                 }
             
+                // ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, read_len, ESP_LOG_INFO);
+
             }
 
-            if (critical_mode) {
-                ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
-                data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
-            } else {
-                data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
-                ESP_LOG_BUFFER_HEXDUMP(TAG, t.rx_buffer, t.length / 8, ESP_LOG_INFO);
+            if (read_len > CONFIG_TINYUSB_CDC_TX_BUFSIZE)
+            {
+                ESP_LOGI(TAG, "Read length is too long, split it into multiple packages");
+                massive_data_pack((uint8_t *)(read_buffer), (size_t)read_len, TASK_SPI_WRITE_READ, 0);
+
+                // ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, 16*100, ESP_LOG_INFO);
+                ESP_LOGI(TAG, "Data sent");
             }
-            xSemaphoreGive(semaphore_task_notify);
+            else
+            {
+                if (critical_mode) {
+                    ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
+                    data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
+                } else {
+                    data_pack(t.rx_buffer, read_len, TASK_SPI_WRITE_READ, 0);
+                }
+                xSemaphoreGive(semaphore_task_notify);
+            }
 
             if (write_len > 0) {
                 heap_caps_free(write_buffer);
@@ -1335,23 +1370,23 @@ void task_spi_config(void *pvParameters)
             int data5_io_num = (int)DATA_SYNTHESIS_4_BYTES(pCOM + 24);
             int data6_io_num = (int)DATA_SYNTHESIS_4_BYTES(pCOM + 28);
             int data7_io_num = (int)DATA_SYNTHESIS_4_BYTES(pCOM + 32);
-            uint16_t max_transfer_sz = DATA_SYNTHESIS_2_BYTES(pCOM + 36);
-            uint32_t common_bus_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 38);
-            uint8_t isr_cpu_id = pCOM[42];
-            int intr_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 43);
-            uint8_t command_bits = pCOM[47];
-            uint8_t address_bits = pCOM[48];
-            uint8_t dummy_bits = pCOM[49];
-            uint8_t mode = pCOM[50];
-            uint16_t duty_cycle_pos = DATA_SYNTHESIS_2_BYTES(pCOM + 51);
-            uint16_t cs_ena_pretrans = DATA_SYNTHESIS_2_BYTES(pCOM + 53);
-            uint8_t cs_ena_posttrans = pCOM[55];
-            int clock_speed_hz = DATA_SYNTHESIS_4_BYTES(pCOM + 56);
-            int input_delay_ns = DATA_SYNTHESIS_4_BYTES(pCOM + 60);
-            int spics_io_num = DATA_SYNTHESIS_4_BYTES(pCOM + 64);
-            uint32_t device_interface_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 68);
-            int queue_size = DATA_SYNTHESIS_4_BYTES(pCOM + 72);
-            uint8_t master_slave_mode_latest = pCOM[76];
+            int max_transfer_sz = (int)DATA_SYNTHESIS_4_BYTES(pCOM + 36);
+            uint32_t common_bus_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 40);
+            uint8_t isr_cpu_id = pCOM[44];
+            int intr_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 45);
+            uint8_t command_bits = pCOM[49];
+            uint8_t address_bits = pCOM[50];
+            uint8_t dummy_bits = pCOM[51];
+            uint8_t mode = pCOM[52];
+            uint16_t duty_cycle_pos = DATA_SYNTHESIS_2_BYTES(pCOM + 53);
+            uint16_t cs_ena_pretrans = DATA_SYNTHESIS_2_BYTES(pCOM + 55);
+            uint8_t cs_ena_posttrans = pCOM[57];
+            int clock_speed_hz = DATA_SYNTHESIS_4_BYTES(pCOM + 58);
+            int input_delay_ns = DATA_SYNTHESIS_4_BYTES(pCOM + 62);
+            int spics_io_num = DATA_SYNTHESIS_4_BYTES(pCOM + 66);
+            uint32_t device_interface_flags = DATA_SYNTHESIS_4_BYTES(pCOM + 70);
+            int queue_size = DATA_SYNTHESIS_4_BYTES(pCOM + 74);
+            uint8_t master_slave_mode_latest = pCOM[78];
 
             ret = spi_deinit(master_slave_mode);
             if (ret != ESP_OK) {

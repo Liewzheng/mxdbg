@@ -14,6 +14,8 @@ TASK_PWM_RUN_STOP = 7
 TASK_PWM_CONFIG = 8
 TASK_HIGH_SPEED_PWM_CONFIG = 9
 TASK_HIGH_SPEED_PWM_RUN_STOP = 10
+TASK_ADC_CONFIG = 16
+TASK_ADC_READ = 17
 TASK_SPI_READ_IMAGE = 160
 TASK_USB_CONFIG = 224
 TASK_RESET_DEVICE = 240
@@ -143,8 +145,20 @@ code = 16779266
 desc = "Invalid PWM parameters"
 
 [error_map.MXDBG_ERR_PWM_INVALID_DUTY_CYCLES]
-code = 16779266
+code = 16779267
 desc = "Invalid PWM duty cycles"
+
+[error_map.MXDBG_ERR_ADC_READ_FAILED]
+code = 16781568
+desc = "ADC read failed"
+
+[error_map.MXDBG_ERR_ADC_INIT_FAILED]
+code = 16781312
+desc = "ADC init failed"
+
+[error_map.MXDBG_ERR_ADC_INVALID_CHANNEL_LIST]
+code = 16781313
+desc = "Invalid ADC channel config list"
 
 [error_map.MXDBG_ERR_SPI_READ_IMAGE_FAILED]
 code = 16818176

@@ -1128,6 +1128,90 @@ class Dbg:
 
         return True, None
 
+    def adc_read(self, read_len:int=64, timeout:int=2) -> tuple:
+        
+        read_len = ctypes.c_uint32(read_len).value
+        timeout = ctypes.c_uint32(timeout).value
+        
+        if read_len <= 0:
+            logger.error("Invalid read length. The read length should be greater than 0.")
+            return False, None
+        if read_len > 0xFFFFFFFF:
+            logger.error("Invalid read length. The read length should be less than 0xFFFFFFFF.")
+            return False, None
+        
+        adc_read_data_temp = [(read_len & 0xFF000000) >> 24, (read_len & 0x00FF0000) >> 16,
+                              (read_len & 0x0000FF00) >> 8,  (read_len & 0x000000FF) >> 0,
+                              (timeout & 0xFF000000) >> 24,  (timeout & 0x00FF0000) >> 16,
+                              (timeout & 0x0000FF00) >> 8,   (timeout & 0x000000FF) >> 0,
+                              ]
+        
+        ret, data = self.__task_execute(self.task_cmd["TASK_ADC_READ"], adc_read_data_temp)
+        self.__check_ret_code(self.task_cmd["TASK_ADC_READ"], ret)
+        
+        # transfer data bytearray to list
+        
+        return True, data
+
+    
+    def adc_config(self, channel_config_list:list[dict]=[], sampling_frequency:int=20_000) -> tuple:
+
+        if not channel_config_list:
+            logger.error("Invalid channel config dictionary.")
+            return False, None
+        if not isinstance(channel_config_list, list):
+            logger.error("Invalid channel config dictionary.")
+            return False, None
+        
+        pattern_num = len(channel_config_list)
+        
+        if pattern_num > 10:
+            logger.error("Invalid channel config dictionary. The number of channels should be less than 10.")
+            return False, None
+        if not all(isinstance(i, dict) for i in channel_config_list):
+            logger.error("Invalid channel config dictionary. The channel config dictionary should be a list of dictionaries.")
+            return False, None
+        if not all("channel" in i and "attenuation" in i and "bit_width" in i for i in channel_config_list):
+            logger.error("Invalid channel config dictionary. The channel config dictionary should contain channel, attenuation and bit width.")
+            return False, None
+        
+        sampling_frequency = ctypes.c_uint32(sampling_frequency).value
+        pattern_num = ctypes.c_uint32(pattern_num).value
+        
+        logger.debug(f"Sampling Frequency: {sampling_frequency}")
+        
+        adc_config_data_temp = [(sampling_frequency & 0xFF000000) >> 24, (sampling_frequency & 0x00FF0000) >> 16,
+                                (sampling_frequency & 0x0000FF00) >> 8,  (sampling_frequency & 0x000000FF) >> 0,
+                                (pattern_num & 0xFF000000) >> 24,        (pattern_num & 0x00FF0000) >> 16,
+                                (pattern_num & 0x0000FF00) >> 8,         (pattern_num & 0x000000FF) >> 0,
+                                ]
+        for i in range(pattern_num):
+            
+            attenuation = ctypes.c_uint8(channel_config_list[i]["attenuation"]).value
+            channel     = ctypes.c_uint8(channel_config_list[i]["channel"]).value
+            unit        = ctypes.c_uint8(0).value                # see adc_unit_t, 0: ADC_UNIT_1, 1: ADC_UNIT_2
+            bit_width   = ctypes.c_uint8(channel_config_list[i]["bit_width"]).value
+            
+            if channel not in range(0, 11):
+                logger.error("Invalid channel number. The channel number should be in the range of 0 to 9.")
+                return False, None
+            if attenuation not in range(0, 4):
+                logger.error("Invalid attenuation. The attenuation should be in the range of 0 to 3.")
+                return False, None
+            if bit_width not in range(9, 13):
+                logger.error("Invalid bit width. The bit width should be in the range of 9 to 12.")
+                return False, None
+            
+            adc_config_data_temp.extend([attenuation, channel, unit, bit_width])
+            
+        ret, _ = self.__task_execute(self.task_cmd["TASK_ADC_CONFIG"], adc_config_data_temp)
+        self.__check_ret_code(self.task_cmd["TASK_ADC_CONFIG"], ret)
+        
+        if ret == 0:
+            return True, None
+        else:
+            return False, None
+
     def usb_config(self, crc_enable: bool = False) -> tuple:
         '''
         @brief Configure USB.

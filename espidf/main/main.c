@@ -31,6 +31,9 @@
 #include "esp_timer.h"
 #include "esp_rom_sys.h"
 
+// ADC
+#include "esp_adc/adc_continuous.h"
+
 #include "tinyusb.h"
 #include "tusb_cdc_acm.h"
 #include "sdkconfig.h"
@@ -52,6 +55,9 @@ static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
 // for spi slave ncs
 #define GPIO_HANDSHAKE      2
 
+// ADC channels
+#define MAX_ADC_CHANNEL_NUM 8
+
 /*-----------------------------------------------------------------------------
  * FUNCTION PROTOTYPES
  *---------------------------------------------------------------------------*/
@@ -65,6 +71,8 @@ void task_spi_write_read(void *pvParameters);
 void task_spi_config(void *pvParameters);
 void task_pwm_run_stop(void *pvParameters);
 void task_pwm_config(void *pvParameters);
+void task_adc_read(void *pvParameters);
+void task_adc_config(void *pvParameters);
 void task_spi_read_image(void *pvParameters);
 void task_usb_config(void *pvParameters);
 void task_usb_dump_buffer(void *pvParameters);
@@ -72,6 +80,11 @@ void task_usb_dump_buffer(void *pvParameters);
 void spi_callback(spi_transaction_t *t);
 void spi_slave_post_setup_cb(spi_slave_transaction_t *t);
 void spi_slave_post_trans_cb(spi_slave_transaction_t *t);
+
+// ADC
+bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
+int adc_init(void);
+void adc_deinit(void);
 
 /*-----------------------------------------------------------------------------
  * GLOBAL VARIABLES
@@ -88,6 +101,8 @@ SemaphoreHandle_t semaphore_spi_write_read;
 SemaphoreHandle_t semaphore_spi_config;
 SemaphoreHandle_t semaphore_pwm_run_stop;
 SemaphoreHandle_t semaphore_pwm_config;
+SemaphoreHandle_t semaphore_adc_read;
+SemaphoreHandle_t semaphore_adc_config;
 
 SemaphoreHandle_t semaphore_pwm_running_state;
 SemaphoreHandle_t semaphore_usb_total_rx_size;
@@ -182,6 +197,39 @@ spi_slave_interface_config_t slvcfg = {
 };
 
 uint8_t master_slave_mode = 0;
+
+// ADC
+static TaskHandle_t s_adc_task_handle;
+
+adc_continuous_handle_t adc_handle = NULL;
+adc_digi_pattern_config_t adc_pattern[MAX_ADC_CHANNEL_NUM] = {
+    {
+        .atten = ADC_ATTEN_DB_0,
+        .channel = 3 & 0x7,
+        .unit = ADC_UNIT_1,
+        .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH
+    },
+    {
+        .atten = ADC_ATTEN_DB_0,
+        .channel = 4 & 0x7,
+        .unit = ADC_UNIT_1,
+        .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH
+    }
+};
+adc_continuous_handle_cfg_t adc_config = {
+    .max_store_buf_size = 1024,  // 设置最大存储空间为 1KB
+    .conv_frame_size = 256,      // 设置每帧转换的大小为 256 字节
+};
+adc_continuous_evt_cbs_t adc_cbs = {
+    .on_conv_done = NULL, // 设置转换完成的回调函数
+};
+adc_continuous_config_t adc_dig_cfg = {
+    .pattern_num = 2,                        // 设置通道数量
+    .adc_pattern = adc_pattern,              // 设置通道参数
+    .sample_freq_hz = 20 * 1000,             // 设置采样频率为 20kHz
+    .conv_mode = ADC_CONV_SINGLE_UNIT_1,     // 设置转换模式为单通道转换，转换模块为 ADC1
+    .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,  // 设置输出格式为 TYPE2（暂时不知道什么格式）
+};
 
 /*-----------------------------------------------------------------------------
  * STATIC VARIABLES
@@ -605,6 +653,51 @@ void spi_slave_post_trans_cb(spi_slave_transaction_t *t)
     gpio_set_level(GPIO_HANDSHAKE, 0);
 }
 
+bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+{
+    (void)user_data;
+    BaseType_t mustYield = pdFALSE;
+    //Notify that ADC continuous driver has done enough number of conversions
+    // vTaskNotifyGiveFromISR(s_adc_task_handle, &mustYield);
+
+    return (mustYield == pdTRUE);
+}
+
+int adc_init(void)
+{
+    int ret = 0;
+
+    if (adc_handle != NULL) {
+        ESP_LOGE(TAG, "ADC handle already exists");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    adc_cbs.on_conv_done = adc_conv_done_cb;
+
+    // 1. Create ADC continuous handle
+    ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_handle));
+
+    // 2. Configure ADC digital controller
+    ret = adc_continuous_config(adc_handle, &adc_dig_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "ADC continuous config failed");
+        return ret;
+    }
+
+    // 3. Tie the event callback to the ADC continuous handle
+    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(adc_handle, &adc_cbs, NULL));
+
+    ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
+
+    return ESP_OK;
+}
+
+void adc_deinit(void)
+{
+    ESP_ERROR_CHECK(adc_continuous_stop(adc_handle));
+    ESP_ERROR_CHECK(adc_continuous_deinit(adc_handle));
+}
+
 /*
  * COMMAND RECEIVED:
  *
@@ -773,6 +866,14 @@ void task_duty_call(void *pvParameters)
                 case TASK_RESET_DEVICE:
 
                     xSemaphoreGive(semaphore_reset_device);
+                    break;
+                
+                case TASK_ADC_READ:
+                    xSemaphoreGive(semaphore_adc_read);
+                    break;
+                
+                case TASK_ADC_CONFIG:
+                    xSemaphoreGive(semaphore_adc_config);
                     break;
 
                 default:
@@ -1608,6 +1709,112 @@ void task_pwm_config(void *pvParameters)
     vTaskDelete(NULL);
 }
 
+void task_adc_config(void *pvParameters)
+{
+    int ret = 0;
+
+    while (1) {
+        if (xSemaphoreTake(semaphore_adc_config, portMAX_DELAY) == pdTRUE) {
+
+            uint32_t sampling_frequency = DATA_SYNTHESIS_4_BYTES(&(com_data_content[0]));
+            uint32_t pattern_num = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
+
+            if (pattern_num > MAX_ADC_CHANNEL_NUM) {
+                ESP_LOGE(TAG, "Invalid ADC channel config list length");
+                data_pack(NULL, 0, TASK_ADC_CONFIG, MXDBG_ERR_ADC_INVALID_CHANNEL_LIST);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            }
+            
+            memset(adc_pattern, 0, sizeof(adc_pattern));
+            memcpy(adc_pattern, &com_data_content[8], pattern_num * 4);  // since 4 bytes contained in adc pattern
+
+            ESP_LOGI(TAG, "ADC channel config list: ");
+            for (int i = 0; i < pattern_num; i++) {
+                ESP_LOGI(TAG, "index %d : channel %d", i, adc_pattern[i].channel);
+                ESP_LOGI(TAG, "index %d : width %d", i, adc_pattern[i].bit_width);
+                ESP_LOGI(TAG, "index %d : atten %d", i, adc_pattern[i].atten);
+            }
+
+            adc_dig_cfg.pattern_num = pattern_num;
+            adc_dig_cfg.sample_freq_hz = sampling_frequency;
+            adc_dig_cfg.adc_pattern = adc_pattern;
+
+            ESP_LOGI(TAG, "ADC channel config list length: %ld", (adc_dig_cfg.pattern_num));
+            ESP_LOGI(TAG, "ADC sampling frequency: %ld", (adc_dig_cfg.sample_freq_hz));
+
+            if (adc_handle != NULL)
+            {
+                adc_deinit();
+                adc_handle = NULL;
+            }
+            if (adc_init() != ESP_OK) 
+            {
+                ESP_LOGE(TAG, "ADC init failed");
+                ret = MXDBG_ERR_ADC_INIT_FAILED;
+                adc_handle = NULL;
+            }
+
+            data_pack(NULL, 0, TASK_ADC_CONFIG, ret);
+            xSemaphoreGive(semaphore_task_notify);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void task_adc_read(void *pvParameters)
+{
+    int ret = 0;
+
+    while (1) {
+        if (xSemaphoreTake(semaphore_adc_read, portMAX_DELAY) == pdTRUE) {
+            ESP_LOGI(TAG, "ADC read task");
+
+            uint32_t read_len = DATA_SYNTHESIS_4_BYTES(&(com_data_content[0])) * 4;
+            uint32_t timeout = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
+
+            ESP_LOGI(TAG, "ADC read length: %ld", read_len);
+
+            uint8_t *p_data = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+            if (p_data == NULL) {
+                ret = ESP_ERR_NO_MEM;
+                ESP_LOGE(TAG, "Memory allocation failed");
+                data_pack(NULL, 0, TASK_ADC_READ, ret);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            }
+            memset(p_data, 0x00, read_len);
+
+            uint32_t ret_num = 0;
+
+            ret = adc_continuous_read(adc_handle, p_data, read_len, &ret_num, timeout);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "ADC read failed (%d)", ret);
+                ret = MXDBG_ERR_ADC_READ_FAILED;
+                data_pack(NULL, 0, TASK_ADC_READ, ret);
+            }
+            
+            ESP_LOGI(TAG, "ADC read length: %ld", ret_num);
+        
+            if (ret_num > 0) {
+                // memcpy(com_data_send_buffer, p_data, ret_num);
+                data_pack(p_data, ret_num, TASK_ADC_READ, 0);
+                ESP_LOGI(TAG, "ADC read completed");
+            }
+
+            heap_caps_free(p_data);
+            p_data = NULL;
+
+            xSemaphoreGive(semaphore_task_notify);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    vTaskDelete(NULL);
+}
+
 void task_spi_read_image(void *pvParameters)
 {
     int ret = 0;
@@ -1663,6 +1870,8 @@ void task_usb_config(void *pvParameters)
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
+
+    vTaskDelete(NULL);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1697,8 +1906,8 @@ uint8_t get_usb_mode(void)
         return 0xFF;
     }
 
-    // delay 10ms
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // delay 500ms
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     uint8_t mode = 0;
 
@@ -1874,6 +2083,16 @@ void usb_cdc_mxdbg_main()
         ESP_LOGE(TAG, "Failed to create semaphore_pwm_running_state");
     }
 
+    semaphore_adc_config = xSemaphoreCreateBinary();
+    if (semaphore_adc_config == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_adc_config");
+    }
+
+    semaphore_adc_read = xSemaphoreCreateBinary();
+    if (semaphore_adc_read == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_adc_read");
+    }
+
     semaphore_usb_total_rx_size = xSemaphoreCreateMutex();
     if (semaphore_usb_total_rx_size == NULL) {
         ESP_LOGE(TAG, "Failed to create semaphore_usb_total_rx_size");
@@ -1908,6 +2127,9 @@ void usb_cdc_mxdbg_main()
 
     xTaskCreate(task_pwm_run_stop, "task_pwm_run_stop", 4096, NULL, 4, NULL);
     xTaskCreate(task_pwm_config, "task_pwm_config", 4096, NULL, 4, NULL);
+
+    xTaskCreate(task_adc_config, "task_adc_config", 4096, NULL, 4, NULL);
+    xTaskCreate(task_adc_read, "task_adc_read", 8192, NULL, 4, NULL);
 
     xTaskCreate(task_spi_read_image, "task_spi_read_image", 8192, NULL, 4, NULL);
 

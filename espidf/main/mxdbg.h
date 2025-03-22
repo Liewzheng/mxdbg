@@ -26,6 +26,8 @@ typedef enum {
     TASK_PWM_CONFIG = 0x08,
     TASK_HIGH_SPEED_PWM_CONFIG = 0x09,
     TASK_HIGH_SPEED_PWM_RUN_STOP = 0x0A,
+    TASK_ADC_CONFIG = 0x10,
+    TASK_ADC_READ = 0x11,
     TASK_SPI_READ_IMAGE = 0xA0,
     TASK_USB_CONFIG = 0xE0,
     TASK_RESET_DEVICE = 0xF0,
@@ -84,7 +86,14 @@ typedef enum {
 #define MXDBG_ERR_PWM_CONFIG_FAILED       ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x00) /*!< PWM config failed */
 #define MXDBG_ERR_PWM_INVALID_CHANNEL     ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x01) /*!< Invalid PWM channel */
 #define MXDBG_ERR_PWM_INVALID_PARAMS      ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x02) /*!< Invalid PWM parameters */
-#define MXDBG_ERR_PWM_INVALID_DUTY_CYCLES ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x02) /*!< Invalid PWM duty cycles */
+#define MXDBG_ERR_PWM_INVALID_DUTY_CYCLES ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x03) /*!< Invalid PWM duty cycles */
+
+// adc read
+#define MXDBG_ERR_ADC_READ_FAILED         ERR_SYNTHESIS(TASK_ADC_READ, 0x00) /*!< ADC read failed */
+
+// adc config
+#define MXDBG_ERR_ADC_INIT_FAILED          ERR_SYNTHESIS(TASK_ADC_CONFIG, 0x00) /*!< ADC init failed */
+#define MXDBG_ERR_ADC_INVALID_CHANNEL_LIST ERR_SYNTHESIS(TASK_ADC_CONFIG, 0x01) /*!< Invalid ADC channel config list */
 
 // task_spi_read_image
 #define MXDBG_ERR_SPI_READ_IMAGE_FAILED ERR_SYNTHESIS(TASK_SPI_READ_IMAGE, 0x00) /*!< SPI read image failed */

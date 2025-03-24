@@ -1274,7 +1274,7 @@ class Dbg:
 
         return True, None
 
-    def adc_read(self, read_len:int=64, timeout:int=2) -> tuple:
+    def adc_read(self, read_len:int=256, timeout:int=2) -> tuple:
         
         c_read_len = ctypes.c_uint32(read_len).value
         c_timeout = ctypes.c_uint32(timeout).value
@@ -1282,8 +1282,8 @@ class Dbg:
         if read_len <= 0:
             logger.error("Invalid read length. The read length should be greater than 0.")
             return False, None
-        if read_len > 0xFFFFFFFF:
-            logger.error("Invalid read length. The read length should be less than 0xFFFFFFFF.")
+        if read_len > 256:
+            logger.error("Invalid read length. The read length should be less than 256.")
             return False, None
         
         adc_read_data_temp = [(c_read_len & 0xFF000000) >> 24, (c_read_len & 0x00FF0000) >> 16,

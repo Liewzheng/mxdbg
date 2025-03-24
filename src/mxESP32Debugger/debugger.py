@@ -20,8 +20,62 @@ import toml
 from loguru import logger
 from serial import Serial
 
+import numpy as np
+import pandas as pd
+
 from mxESP32Debugger.__version__ import __version__
 
+
+class DataWrapperADCBytearray(bytearray):
+    """A wrapper class for bytearray to handle ADC data."""
+    
+    ADC_DATA_MASK    = int('0000_0000_0000_0000_0000_1111_1111_1111',2)
+    ADC_CHANNEL_MASK = int('0000_0000_0000_0001_1110_0000_0000_0000',2)
+    ADC_UNIT_MASK    = int('0000_0000_0000_0010_0000_0000_0000_0000',2)
+    
+    def __init__(self, 
+                 read_len:int,
+                 sampling_frequency:int,
+                 channel_config_list:list,
+                 atten_dict:dict):
+        """
+        Initialize the DataWrapperADCBytearray with read length, sampling frequency, channel configuration list, and attenuation dictionary.
+        
+        Args:
+            read_len (int): The number of samples to read.
+            sampling_frequency (int): The sampling frequency in Hz.
+            channel_config_list (list): A list of dictionaries containing channel configuration.
+            atten_dict (dict): A dictionary containing attenuation values.
+        """
+        
+        super().__init__(self)
+        self.read_len = read_len
+        self.sampling_frequency = sampling_frequency
+        self.sampling_period = 1 / sampling_frequency
+        self.channel_config_list = channel_config_list
+        self.atten_dict = atten_dict
+
+    def to_dataframe(self):
+        """
+        Convert the bytearray to a dataframe.
+        """
+        
+        data_list = [{} for _ in range(self.read_len)]
+        data_np = np.frombuffer(self, dtype='<u4')
+        
+        for i in range(self.read_len):
+            data_list[i]['data'] = (data_np[i] & self.ADC_DATA_MASK) >> 0
+            data_list[i]['channel'] = (data_np[i] & self.ADC_CHANNEL_MASK) >> 13
+            data_list[i]['unit'] = (data_np[i] & self.ADC_UNIT_MASK) >> 17
+            
+            atten = next((item["attenuation"] for item in self.channel_config_list if item["channel"] == data_list[i]['channel']),0)
+            bitwidth = next((item["bit_width"] for item in self.channel_config_list if item["channel"] == data_list[i]['channel']),0)
+            
+            data_list[i]['voltage'] = ((data_np[i] & self.ADC_DATA_MASK) >> 0) * self.atten_dict[atten]['max_range'] / (2**bitwidth - 1)
+            data_list[i]['timestamp'] = i * self.sampling_period * 1000
+    
+        data_df = pd.DataFrame(data_list)
+        return data_df
 
 class Dbg:
 
@@ -115,6 +169,25 @@ class Dbg:
         self.__expand_io_init_status = False
         self.__power_init_status = False
         self.__expand_io_mode_bitmask = 0x0000
+        
+        self.__adc_atten_dict = {
+            0: {
+                'min_range': 0,     # mv
+                'max_range': 950,   # mv 
+            },
+            1: {
+                'min_range': 0,     # mv
+                'max_range': 1250,  # mv
+            },
+            2: {
+                'min_range': 0,     # mv
+                'max_range': 1750,  # mv
+            },
+            3: {
+                'min_range': 0,     # mv
+                'max_range': 3300,  # mv
+            },
+        }
 
         self.connect(**kwargs)
 
@@ -1130,8 +1203,8 @@ class Dbg:
 
     def adc_read(self, read_len:int=64, timeout:int=2) -> tuple:
         
-        read_len = ctypes.c_uint32(read_len).value
-        timeout = ctypes.c_uint32(timeout).value
+        c_read_len = ctypes.c_uint32(read_len).value
+        c_timeout = ctypes.c_uint32(timeout).value
         
         if read_len <= 0:
             logger.error("Invalid read length. The read length should be greater than 0.")
@@ -1140,18 +1213,24 @@ class Dbg:
             logger.error("Invalid read length. The read length should be less than 0xFFFFFFFF.")
             return False, None
         
-        adc_read_data_temp = [(read_len & 0xFF000000) >> 24, (read_len & 0x00FF0000) >> 16,
-                              (read_len & 0x0000FF00) >> 8,  (read_len & 0x000000FF) >> 0,
-                              (timeout & 0xFF000000) >> 24,  (timeout & 0x00FF0000) >> 16,
-                              (timeout & 0x0000FF00) >> 8,   (timeout & 0x000000FF) >> 0,
+        adc_read_data_temp = [(c_read_len & 0xFF000000) >> 24, (c_read_len & 0x00FF0000) >> 16,
+                              (c_read_len & 0x0000FF00) >> 8,  (c_read_len & 0x000000FF) >> 0,
+                              (c_timeout & 0xFF000000) >> 24,  (c_timeout & 0x00FF0000) >> 16,
+                              (c_timeout & 0x0000FF00) >> 8,   (c_timeout & 0x000000FF) >> 0,
                               ]
         
         ret, data = self.__task_execute(self.task_cmd["TASK_ADC_READ"], adc_read_data_temp)
         self.__check_ret_code(self.task_cmd["TASK_ADC_READ"], ret)
         
-        # transfer data bytearray to list
-        
-        return True, data
+        if data is not None:
+            return True, DataWrapperADCBytearray(data, 
+                                                 read_len=read_len,
+                                                 sampling_frequency=self.adc_sampling_frequency,
+                                                 channel_config_list=self.adc_channel_config_list,
+                                                 atten_dict=self.__adc_atten_dict,
+                                                 )
+        else:
+            return False, None
 
     
     def adc_config(self, channel_config_list:list[dict]=[], sampling_frequency:int=20_000) -> tuple:
@@ -1178,6 +1257,9 @@ class Dbg:
         if self.__crc_enable:
             ret, _ = self.usb_config(crc_enable=False)
             assert ret, "USB config failed."
+        
+        self.adc_sampling_frequency = sampling_frequency
+        self.adc_channel_config_list = channel_config_list
         
         sampling_frequency = ctypes.c_uint32(sampling_frequency).value
         pattern_num = ctypes.c_uint32(pattern_num).value

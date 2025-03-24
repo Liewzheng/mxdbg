@@ -1276,15 +1276,19 @@ class Dbg:
 
     def adc_read(self, read_len:int=256, timeout:int=2) -> tuple:
         
-        c_read_len = ctypes.c_uint32(read_len).value
+        if read_len <= 0 or read_len > 0xFFFFFFFF:
+            logger.error("Invalid read length. The read length should be in the range of 1 to 0xFFFFFFFF.")
+            return False, None
+        if read_len // 256 == 0:
+            logger.error("Invalid read length. The read length should be divisible by 256.")
+            return False, None
+        
+        read_times = read_len // 256
+        
+        c_read_len = ctypes.c_uint32(256).value
         c_timeout = ctypes.c_uint32(timeout).value
         
-        if read_len <= 0:
-            logger.error("Invalid read length. The read length should be greater than 0.")
-            return False, None
-        if read_len > 256:
-            logger.error("Invalid read length. The read length should be less than 256.")
-            return False, None
+        data = b""
         
         adc_read_data_temp = [(c_read_len & 0xFF000000) >> 24, (c_read_len & 0x00FF0000) >> 16,
                               (c_read_len & 0x0000FF00) >> 8,  (c_read_len & 0x000000FF) >> 0,
@@ -1292,9 +1296,11 @@ class Dbg:
                               (c_timeout & 0x0000FF00) >> 8,   (c_timeout & 0x000000FF) >> 0,
                               ]
         
-        ret, data = self.__task_execute(self.task_cmd["TASK_ADC_READ"], adc_read_data_temp)
-        self.__check_ret_code(self.task_cmd["TASK_ADC_READ"], ret)
-        
+        for i in range(read_times):
+            ret, data_temp = self.__task_execute(self.task_cmd["TASK_ADC_READ"], adc_read_data_temp)
+            self.__check_ret_code(self.task_cmd["TASK_ADC_READ"], ret)
+            data += data_temp
+            
         if data is not None:
             return True, DataWrapperADCBytearray(data, 
                                                  read_len=read_len,

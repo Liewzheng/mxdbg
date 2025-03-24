@@ -22,18 +22,83 @@ from serial import Serial
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from mxESP32Debugger.__version__ import __version__
 
 
-class DataWrapperADCBytearray(bytearray):
+class DataWrapperADCDataframe():
+    
+    def __init__(self,
+                 data_df:pd.DataFrame,
+                 x_label:str="",
+                 y_label:str="",
+                 title:str="",
+                 channels:list=[]
+                 ) -> None:
+        
+        """
+        Initialize the DataWrapperADCDataframe with data, x_label, y_label, title, and channels.
+        
+        Args:
+            data_df (pd.DataFrame): The data to be wrapped.
+            x_label (str): The label for the x-axis.
+            y_label (str): The label for the y-axis.
+            title (str): The title of the plot.
+            channels (list): List of channels to be plotted.
+        """
+        
+        self.data_df = data_df
+        self.x_label = x_label
+        self.y_label = y_label
+        self.channels = channels
+        self.title = title
+    
+    def plot(self, x_label:str="", y_label:str="", title:str="", channel:list=[], save_path:str="") -> None:
+        
+        """
+        Plot the data in the dataframe.
+        
+        Args:
+            x_label (str): The label for the x-axis.
+            y_label (str): The label for the y-axis.
+            title (str): The title of the plot.
+            channel (list): List of channels to be plotted.
+        """
+        
+        if self.data_df is None:
+            logger.error("Data is not available.")
+            return
+        
+        channel_unique = channel if channel != [] else self.data_df['channel'].unique()
+        plt.figure(figsize=(10, 6))
+        for channel in channel_unique:
+            data_df_channel = self.data_df[self.data_df['channel'] == channel]
+            plt.plot(data_df_channel['timestamp'], data_df_channel['voltage'], label=f'Channel {channel}')
+
+        plt.title(title if title != "" else self.title)
+        plt.xlabel(x_label if x_label != "" else self.x_label)
+        plt.ylabel(y_label if y_label != "" else self.y_label)
+        plt.legend()
+        plt.grid()
+        if save_path != "":
+            try:
+                plt.savefig(save_path)
+                logger.info(f"Plot saved to {save_path}")
+            except Exception as e:
+                logger.error(f"Failed to save plot: {e}")
+        plt.show()
+        plt.close()
+
+class DataWrapperADCBytearray():
     """A wrapper class for bytearray to handle ADC data."""
     
     ADC_DATA_MASK    = int('0000_0000_0000_0000_0000_1111_1111_1111',2)
     ADC_CHANNEL_MASK = int('0000_0000_0000_0001_1110_0000_0000_0000',2)
     ADC_UNIT_MASK    = int('0000_0000_0000_0010_0000_0000_0000_0000',2)
     
-    def __init__(self, 
+    def __init__(self,
+                 raw_data:bytearray,
                  read_len:int,
                  sampling_frequency:int,
                  channel_config_list:list,
@@ -42,18 +107,21 @@ class DataWrapperADCBytearray(bytearray):
         Initialize the DataWrapperADCBytearray with read length, sampling frequency, channel configuration list, and attenuation dictionary.
         
         Args:
+            raw_data (bytearray): The raw ADC data as a bytearray.
             read_len (int): The number of samples to read.
             sampling_frequency (int): The sampling frequency in Hz.
             channel_config_list (list): A list of dictionaries containing channel configuration.
             atten_dict (dict): A dictionary containing attenuation values.
         """
         
-        super().__init__(self)
+        self.raw_data = raw_data
         self.read_len = read_len
         self.sampling_frequency = sampling_frequency
         self.sampling_period = 1 / sampling_frequency
         self.channel_config_list = channel_config_list
         self.atten_dict = atten_dict
+        
+        self.data_df = None
 
     def to_dataframe(self):
         """
@@ -61,7 +129,7 @@ class DataWrapperADCBytearray(bytearray):
         """
         
         data_list = [{} for _ in range(self.read_len)]
-        data_np = np.frombuffer(self, dtype='<u4')
+        data_np = np.frombuffer(self.raw_data, dtype='<u4')
         
         for i in range(self.read_len):
             data_list[i]['data'] = (data_np[i] & self.ADC_DATA_MASK) >> 0
@@ -75,7 +143,12 @@ class DataWrapperADCBytearray(bytearray):
             data_list[i]['timestamp'] = i * self.sampling_period * 1000
     
         data_df = pd.DataFrame(data_list)
-        return data_df
+        self.data_df = data_df
+        
+        return DataWrapperADCDataframe(data_df=data_df,
+                                       x_label="Time (ms)",
+                                       y_label="Voltage (V)",
+                                       title=f"ADC Data (in {self.sampling_frequency} Hz)")
 
 class Dbg:
 

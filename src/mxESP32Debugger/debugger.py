@@ -1175,6 +1175,10 @@ class Dbg:
             logger.error("Invalid channel config dictionary. The channel config dictionary should contain channel, attenuation and bit width.")
             return False, None
         
+        if self.__crc_enable:
+            ret, _ = self.usb_config(crc_enable=False)
+            assert ret, "USB config failed."
+        
         sampling_frequency = ctypes.c_uint32(sampling_frequency).value
         pattern_num = ctypes.c_uint32(pattern_num).value
         

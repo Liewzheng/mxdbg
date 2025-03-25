@@ -152,7 +152,7 @@ class DataWrapperADCBytearray():
 
 class Dbg:
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, port:str=None, *args, **kwargs):
         self.__client = None
         self.__pwm_states = [False, False, False]
         self.__crc_enable = True
@@ -262,7 +262,7 @@ class Dbg:
             },
         }
 
-        self.connect(**kwargs)
+        self.connect(port, **kwargs)
 
     @property
     def pwm_valid_pins(self) -> list:
@@ -364,27 +364,30 @@ class Dbg:
         else:
             raise ValueError(f'Pin {pin} is not used by any module. Or it is not a valid pin.')
 
-    def connect(self, **kwargs) -> None:
+    def connect(self, port:str=None, **kwargs) -> None:
 
-        _port = None
-        retry_times = 10
-        while True:
-            for port in sorted(serial.tools.list_ports.comports()):
+        if port is None:
+            _port = None
+            retry_times = 10
+            while True:
+                for port in sorted(serial.tools.list_ports.comports()):
 
-                if port.vid is None or port.pid is None:
-                    continue
-                if (self.usb_info["USB_VID"] == port.vid):
-                    _port = port.name
+                    if port.vid is None or port.pid is None:
+                        continue
+                    if (self.usb_info["USB_VID"] == port.vid):
+                        _port = port.name
+                        break
+
+                if _port is not None:
                     break
+                else:
+                    retry_times -= 1
+                    time.sleep(1)
 
-            if _port is not None:
-                break
-            else:
-                retry_times -= 1
-                time.sleep(1)
-
-            if retry_times == 0:
-                raise ValueError("No device found.")
+                if retry_times == 0:
+                    raise ValueError("No device found.")
+        else:
+            _port = port
 
         try:
             if sys.platform != 'win32':
@@ -1652,7 +1655,7 @@ class Dbg:
         
         return True
     
-    def expand_io_init(self) -> bool:
+    def expand_io_init(self) -> tuple:
         
         '''
         @brief Initialize expand IO.
@@ -1698,7 +1701,7 @@ class Dbg:
                 self.__expand_io_mode_bitmask = 0xFFFF
         
         self.__expand_io_init_status = True
-        return True
+        return True, board_version
             
     def expand_io_config(self, pin: int, mode: int) -> bool:
         

@@ -653,7 +653,8 @@ void spi_slave_post_trans_cb(spi_slave_transaction_t *t)
     gpio_set_level(GPIO_HANDSHAKE, 0);
 }
 
-bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+// bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+bool adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
 {
     (void)user_data;
     BaseType_t mustYield = pdFALSE;
@@ -1076,9 +1077,17 @@ void task_gpio_write_read(void *pvParameters)
                 data_pack(NULL, 0, TASK_GPIO_WRITE_READ, ret);
             } else if (operation == 1) // read
             {
-                level = gpio_get_level((gpio_num_t)pin_num);
+                level = (uint8_t)gpio_get_level((gpio_num_t)pin_num);
                 data_pack(&level, 1, TASK_GPIO_WRITE_READ, 0);
             }
+            else {
+                ret = MXDBG_ERR_GPIO_INVALID_OPERATION;
+                ESP_LOGE(TAG, "Invalid GPIO operation");
+                data_pack(NULL, 0, TASK_GPIO_WRITE_READ, ret);
+            }
+
+            ESP_LOGI(TAG, "GPIO operation: %d, pin num: %d, level: %d", operation, pin_num, level);
+
 
             xSemaphoreGive(semaphore_task_notify);
         }

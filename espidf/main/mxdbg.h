@@ -88,6 +88,9 @@ typedef enum {
 #define MXDBG_ERR_PWM_INVALID_PARAMS      ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x02) /*!< Invalid PWM parameters */
 #define MXDBG_ERR_PWM_INVALID_DUTY_CYCLES ERR_SYNTHESIS(TASK_PWM_CONFIG, 0x03) /*!< Invalid PWM duty cycles */
 
+// gpio read write
+#define MXDBG_ERR_GPIO_INVALID_OPERATION  ERR_SYNTHESIS(TASK_GPIO_WRITE_READ, 0x00) /*!< Invalid GPIO operation */
+
 // adc read
 #define MXDBG_ERR_ADC_READ_FAILED         ERR_SYNTHESIS(TASK_ADC_READ, 0x00) /*!< ADC read failed */
 

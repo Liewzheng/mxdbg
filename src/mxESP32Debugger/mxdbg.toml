@@ -148,6 +148,10 @@ desc = "Invalid PWM parameters"
 code = 16779267
 desc = "Invalid PWM duty cycles"
 
+[error_map.MXDBG_ERR_GPIO_INVALID_OPERATION]
+code = 16777984
+desc = "Invalid GPIO operation"
+
 [error_map.MXDBG_ERR_ADC_READ_FAILED]
 code = 16781568
 desc = "ADC read failed"

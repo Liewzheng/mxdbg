@@ -140,15 +140,16 @@ class DataWrapperADCBytearray():
             bitwidth = next((item["bit_width"] for item in self.channel_config_list if item["channel"] == data_list[i]['channel']),0)
             
             data_list[i]['voltage'] = ((data_np[i] & self.ADC_DATA_MASK) >> 0) * self.atten_dict[atten]['max_range'] / (2**bitwidth - 1)
-            data_list[i]['timestamp'] = i * self.sampling_period * 1000
+            data_list[i]['timestamp'] = (i * self.sampling_period if i%2 == 0 else data_list[i-1]['timestamp'] )
     
         data_df = pd.DataFrame(data_list)
         self.data_df = data_df
         
-        return DataWrapperADCDataframe(data_df=data_df,
-                                       x_label="Time (ms)",
-                                       y_label="Voltage (V)",
-                                       title=f"ADC Data (in {self.sampling_frequency} Hz)")
+        # return DataWrapperADCDataframe(data_df=data_df,
+        #                                x_label="Time (ms)",
+        #                                y_label="Voltage (V)",
+        #                                title=f"ADC Data (in {self.sampling_frequency} Hz)")
+        return data_df
 
 class Dbg:
 
@@ -886,7 +887,7 @@ class Dbg:
 
         if port not in [0, 1]:
             logger.error("Invalid port number.")
-            return False
+            return False, None
 
         self.__i2c_valid_pins = None
 
@@ -1397,7 +1398,7 @@ class Dbg:
         else:
             return False, None
         
-    def power_init(self) -> bool:
+    def power_init(self) -> tuple:
         
         '''
         @brief Initialize power.
@@ -1405,8 +1406,8 @@ class Dbg:
         '''
 
         if not self.__expand_io_init_status:
-            ret = self.expand_io_init()
-            if ret is not True:
+            ret, version = self.expand_io_init()
+            if not ret:
                 return False
             
         if not self.__power_init_status:
@@ -1459,7 +1460,7 @@ class Dbg:
         else:
             logger.info("Power already initialized.")
         
-        return True
+        return True, version
 
     def power_control(self, communication_type:str="SPI", power_type:str='1V8') -> bool:
         

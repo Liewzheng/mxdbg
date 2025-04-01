@@ -16,6 +16,8 @@ TASK_HIGH_SPEED_PWM_CONFIG = 9
 TASK_HIGH_SPEED_PWM_RUN_STOP = 10
 TASK_ADC_CONFIG = 16
 TASK_ADC_READ = 17
+TASK_SOFT_I2C_CONFIG = 32
+TASK_SOFT_I2C_WRITE_READ = 33
 TASK_SPI_READ_IMAGE = 160
 TASK_USB_CONFIG = 224
 TASK_RESET_DEVICE = 240
@@ -215,3 +217,23 @@ desc = "SPI transaction failed"
 [error_map.MXDBG_ERR_GPIO_CONFIG_FAILED]
 code = 16778240
 desc = "GPIO config failed"
+
+[error_map.MXDBG_ERR_SOFT_I2C_INVALID_PORT]
+code = 16785408
+desc = "Invalid SOFT I2C port"
+
+[error_map.MXDBG_ERR_SOFT_I2C_DEINIT_FAILED]
+code = 16785409
+desc = "SOFT I2C deinit failed"
+
+[error_map.MXDBG_ERR_SOFT_I2C_INIT_FAILED]
+code = 16785410
+desc = "SOFT I2C init failed"
+
+[error_map.MXDBG_ERR_SOFT_I2C_INVALID_OPERATION]
+code = 16785667
+desc = "Invalid SOFT I2C operation"
+
+[error_map.MXDBG_ERR_SOFT_I2C_WRITE_READ_FAILED]
+code = 16785668
+desc = "SOFT I2C write read failed"

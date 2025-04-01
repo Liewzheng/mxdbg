@@ -40,6 +40,8 @@
 
 #include "mxdbg.h"
 
+#include "soft_i2c.h"
+
 /*-----------------------------------------------------------------------------
  * MACROS
  *---------------------------------------------------------------------------*/
@@ -65,6 +67,8 @@ void task_duty_call(void *pvParameters);
 void task_notify(void *pvParameters);
 void task_i2c_write_read(void *pvParameters);
 void task_i2c_config(void *pvParameters);
+void task_soft_i2c_write_read(void *pvParameters);
+void task_soft_i2c_config(void *pvParameters);
 void task_gpio_write_read(void *pvParameters);
 void task_gpio_config(void *pvParameters);
 void task_spi_write_read(void *pvParameters);
@@ -85,22 +89,29 @@ void spi_slave_post_trans_cb(spi_slave_transaction_t *t);
 bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
 int adc_init(void);
 void adc_deinit(void);
-
 /*-----------------------------------------------------------------------------
  * GLOBAL VARIABLES
  *---------------------------------------------------------------------------*/
 
 // Task semaphores
 SemaphoreHandle_t semaphore_duty_call;
-SemaphoreHandle_t semaphore_i2c_write_read;
 SemaphoreHandle_t semaphore_task_notify;
+
+SemaphoreHandle_t semaphore_i2c_write_read;
+SemaphoreHandle_t semaphore_i2c_config;
+
+SemaphoreHandle_t semaphore_soft_i2c_write_read;
+SemaphoreHandle_t semaphore_soft_i2c_config;
+
 SemaphoreHandle_t semaphore_gpio_write_read;
 SemaphoreHandle_t semaphore_gpio_config;
-SemaphoreHandle_t semaphore_i2c_config;
+
 SemaphoreHandle_t semaphore_spi_write_read;
 SemaphoreHandle_t semaphore_spi_config;
+
 SemaphoreHandle_t semaphore_pwm_run_stop;
 SemaphoreHandle_t semaphore_pwm_config;
+
 SemaphoreHandle_t semaphore_adc_read;
 SemaphoreHandle_t semaphore_adc_config;
 
@@ -199,7 +210,7 @@ spi_slave_interface_config_t slvcfg = {
 uint8_t master_slave_mode = 0;
 
 // ADC
-static TaskHandle_t s_adc_task_handle;
+// static TaskHandle_t s_adc_task_handle;
 
 adc_continuous_handle_t adc_handle = NULL;
 adc_digi_pattern_config_t adc_pattern[MAX_ADC_CHANNEL_NUM] = {
@@ -230,6 +241,12 @@ adc_continuous_config_t adc_dig_cfg = {
     .conv_mode = ADC_CONV_SINGLE_UNIT_1,     // 设置转换模式为单通道转换，转换模块为 ADC1
     .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,  // 设置输出格式为 TYPE2（暂时不知道什么格式）
 };
+
+/*-----------------------------------------------------------------------------
+ * EXTERNAL VARIABLES
+ *---------------------------------------------------------------------------*/
+
+extern soft_i2c_port_t i2c_slaves[8];
 
 /*-----------------------------------------------------------------------------
  * STATIC VARIABLES
@@ -877,6 +894,14 @@ void task_duty_call(void *pvParameters)
                     xSemaphoreGive(semaphore_adc_config);
                     break;
 
+                case TASK_SOFT_I2C_CONFIG:
+                    xSemaphoreGive(semaphore_soft_i2c_config);
+                    break;
+                
+                case TASK_SOFT_I2C_WRITE_READ:
+                    xSemaphoreGive(semaphore_soft_i2c_write_read);
+                    break;
+
                 default:
 
                     ret = MXDBG_ERR_UNKNOWN_TASK;
@@ -1053,6 +1078,116 @@ void task_i2c_config(void *pvParameters)
 
             xSemaphoreGive(semaphore_task_notify);
         }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void task_soft_i2c_config(void *pvParameters)
+{
+    int ret = 0;
+
+    while (1) {
+        if (xSemaphoreTake(semaphore_soft_i2c_config, portMAX_DELAY) == pdTRUE) {
+            uint8_t port = com_data_content[0];
+            uint8_t scl_pin = com_data_content[1];
+            uint8_t sda_pin = com_data_content[2];
+            bool pullup_en = com_data_content[3] ? true : false;
+            uint32_t clock_speed = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
+
+            if (port > 8) {
+                ESP_LOGE(TAG, "Invalid soft I2C port number");
+                ret = MXDBG_ERR_SOFT_I2C_INVALID_PORT;
+                data_pack(NULL, 0, TASK_SOFT_I2C_CONFIG, ret);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            }
+
+            i2c_slaves[port].port = port;
+            i2c_slaves[port].sclk = scl_pin;
+            i2c_slaves[port].sdio = sda_pin;
+            i2c_slaves[port].pullup_en = pullup_en;
+            i2c_slaves[port].clk_speed = clock_speed;
+
+            if (i2c_slaves[port].inited == true) {
+                ret = soft_i2c_deinit(&(i2c_slaves[port]));
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "I2C deinit failed");
+                    ret = MXDBG_ERR_SOFT_I2C_DEINIT_FAILED;
+                }
+            }
+            else
+            {
+                ret = soft_i2c_init(&(i2c_slaves[port]));
+                if (ret != ESP_OK) {
+                    ESP_LOGE(TAG, "I2C init failed");
+                    ret = MXDBG_ERR_SOFT_I2C_INIT_FAILED;
+                }
+            }
+
+            data_pack(NULL, 0, TASK_SOFT_I2C_CONFIG, ret);
+            xSemaphoreGive(semaphore_task_notify);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void task_soft_i2c_write_read(void *pvParameters)
+{
+    int ret = 0;
+    static portMUX_TYPE soft_i2c_spinlock = portMUX_INITIALIZER_UNLOCKED;
+
+    while(1) {
+        if (xSemaphoreTake(semaphore_soft_i2c_write_read, portMAX_DELAY) == pdTRUE) {
+
+            uint8_t slave_id = com_data_content[0];
+            uint8_t port = com_data_content[1];
+            size_t write_length = DATA_SYNTHESIS_4_BYTES(&(com_data_content[2]));
+            size_t read_length = DATA_SYNTHESIS_4_BYTES(&(com_data_content[6]));
+            uint8_t *write_data_list = NULL;
+            uint8_t *read_data_list = NULL;
+
+            if (write_length > 0)
+            {
+                write_data_list = (uint8_t *)malloc(write_length);
+                if (write_data_list) {
+                    memcpy(write_data_list, &com_data_content[10], write_length);
+                } else {
+                    ESP_LOGE(TAG, "Memory allocation failed");
+                }
+            }
+
+            if (read_length > 0)
+            {
+                read_data_list = (uint8_t *)malloc(read_length);
+                if (read_data_list) {
+                    memset(read_data_list, 0, read_length);
+                } else {
+                    ESP_LOGE(TAG, "Memory allocation failed");
+                }
+            }
+
+            taskENTER_CRITICAL(&soft_i2c_spinlock);
+            ret = soft_i2c_write_read(&(i2c_slaves[port]), slave_id, write_data_list, write_length, read_data_list, read_length, 0);
+            taskEXIT_CRITICAL(&soft_i2c_spinlock);
+            
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
+                ret = MXDBG_ERR_SOFT_I2C_WRITE_READ_FAILED;
+            }
+
+            if (read_length > 0)
+            {
+                data_pack(read_data_list, read_length, TASK_SOFT_I2C_WRITE_READ, ret);
+            }
+            else
+            {
+                data_pack(NULL, 0, TASK_SOFT_I2C_WRITE_READ, ret);
+            }
+            xSemaphoreGive(semaphore_task_notify);
+
+        }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -2067,6 +2202,16 @@ void usb_cdc_mxdbg_main()
         ESP_LOGE(TAG, "Failed to create semaphore_i2c_config");
     }
 
+    semaphore_soft_i2c_write_read = xSemaphoreCreateBinary();
+    if (semaphore_soft_i2c_write_read == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_soft_i2c_write_read");
+    }
+
+    semaphore_soft_i2c_config = xSemaphoreCreateBinary();
+    if (semaphore_soft_i2c_config == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_soft_i2c_config");
+    }
+
     semaphore_spi_write_read = xSemaphoreCreateBinary();
     if (semaphore_spi_write_read == NULL) {
         ESP_LOGE(TAG, "Failed to create semaphore_spi_write_read");
@@ -2139,6 +2284,9 @@ void usb_cdc_mxdbg_main()
 
     xTaskCreate(task_adc_config, "task_adc_config", 4096, NULL, 4, NULL);
     xTaskCreate(task_adc_read, "task_adc_read", 8192, NULL, 4, NULL);
+
+    xTaskCreate(task_soft_i2c_config, "task_soft_i2c_config", 4096, NULL, 4, NULL);
+    xTaskCreate(task_soft_i2c_write_read, "task_soft_i2c_write_read", 8192, NULL, 4, NULL);
 
     xTaskCreate(task_spi_read_image, "task_spi_read_image", 8192, NULL, 4, NULL);
 

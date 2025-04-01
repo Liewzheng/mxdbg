@@ -26,6 +26,24 @@ import matplotlib.pyplot as plt
 
 from mxESP32Debugger.__version__ import __version__
 
+class ParametersError(Exception):
+    """参数不符合要求的自定义异常
+    
+    Attributes:
+        param_name -- 引发错误的参数名称
+        value -- 引发错误的参数值
+        allowed_range -- 允许的取值范围/类型描述
+    """
+    
+    def __init__(self, param_name: str, value: object, allowed_range: str):
+        self.param_name = param_name
+        self.value = value
+        self.allowed_range = allowed_range
+        super().__init__(f"参数 '{param_name}' 的取值 {value} 无效，要求：{allowed_range}")
+
+    def __str__(self) -> str:
+        return f"[{self.param_name}] {super().__str__()}"
+
 
 class DataWrapperADCDataframe():
     
@@ -925,6 +943,96 @@ class Dbg:
                 self.mark_pin_free(pin)
             for pin in [sda_pin, scl_pin]:
                 self.__mark_i2c_used(pin)
+            return True, None
+        
+    def soft_i2c_write_read(self,
+                       slave_id: int,
+                       write_list: list,
+                       read_length: int,
+                       port: int = 0,
+                       ) -> tuple:
+
+        if port < 0 or port > 7:
+            raise ParametersError(
+                param_name="port",
+                value=port,
+                allowed_range="0-7",
+            )
+        
+        if slave_id < 0x04 or slave_id > 0x7F:
+            raise ParametersError(
+                param_name="slave_id",
+                value=slave_id,
+                allowed_range="0x04-0x7F",
+            )
+        
+        if len(write_list) == 0 and read_length == 0:
+            raise ValueError("Write length and read length should not be zero.")
+        
+        slave_id = ctypes.c_uint8(slave_id).value
+        port = ctypes.c_uint8(port).value
+        write_length = ctypes.c_uint32(len(write_list)).value
+        read_length = ctypes.c_uint32(read_length).value
+        
+        soft_i2c_write_read_data_temp = [
+            slave_id,
+            port,
+            (write_length & 0xFF000000) >> 24, (write_length & 0x00FF0000) >> 16,
+            (write_length & 0x0000FF00) >> 8, (write_length & 0x000000FF),
+            (read_length & 0xFF000000) >> 24, (read_length & 0x00FF0000) >> 16,
+            (read_length & 0x0000FF00) >> 8, (read_length & 0x000000FF),
+        ]
+        
+        soft_i2c_write_read_data_temp += write_list
+        
+        ret, data = self.__task_execute(self.task_cmd["TASK_SOFT_I2C_WRITE_READ"], soft_i2c_write_read_data_temp)
+        if ret != 0:
+            self.__check_ret_code(self.task_cmd["TASK_SOFT_I2C_WRITE_READ"], ret)
+            return False, None
+        else:
+            data = list(data) if data is not None else None
+            return True, data
+    
+    def soft_i2c_config(self,
+                        port: int = 0, freq: int = 400000,
+                        sda_pin: int = 20, scl_pin: int = 21,
+                        pullup_enable: bool = True) -> tuple:
+        
+        if port < 0 or port > 7:
+            raise ParametersError(
+                param_name="port",
+                value=port,
+                allowed_range="0-7",
+            )
+            
+        if freq < 100_000 or freq > 1_000_000:
+            raise ParametersError(
+                param_name="freq",
+                value=freq,
+                allowed_range="100000-1000000",
+            )
+        
+        port = ctypes.c_uint8(port).value
+        freq = ctypes.c_uint32(freq).value
+        scl_pin = ctypes.c_uint8(scl_pin).value
+        sda_pin = ctypes.c_uint8(sda_pin).value
+        pullup_enable = 0xFF if pullup_enable else 0x00
+        
+        soft_i2c_config_data_temp = [
+            port, 
+            scl_pin,
+            sda_pin,
+            pullup_enable,
+            (freq & 0xFF000000) >> 24, (freq & 0x00FF0000) >> 16,
+            (freq & 0x0000FF00) >> 8,  (freq & 0x000000FF) >> 0,
+        ]
+        
+        ret, data = self.__task_execute(self.task_cmd["TASK_SOFT_I2C_CONFIG"], soft_i2c_config_data_temp)
+        
+        if ret != 0:
+            self.__check_ret_code(self.task_cmd["TASK_SOFT_I2C_CONFIG"], ret)
+            return False, None
+        else:
             return True, None
 
     def gpio_write_read(self, pin: int, level: int = None) -> tuple:

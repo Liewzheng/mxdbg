@@ -1093,6 +1093,7 @@ void task_soft_i2c_config(void *pvParameters)
             uint8_t sda_pin = com_data_content[2];
             bool pullup_en = com_data_content[3] ? true : false;
             uint32_t clock_speed = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
+            uint32_t ns = DATA_SYNTHESIS_4_BYTES(&(com_data_content[8]));
 
             if (port > 8) {
                 ESP_LOGE(TAG, "Invalid soft I2C port number");
@@ -1102,12 +1103,6 @@ void task_soft_i2c_config(void *pvParameters)
                 continue;
             }
 
-            i2c_slaves[port].port = port;
-            i2c_slaves[port].sclk = scl_pin;
-            i2c_slaves[port].sdio = sda_pin;
-            i2c_slaves[port].pullup_en = pullup_en;
-            i2c_slaves[port].clk_speed = clock_speed;
-
             if (i2c_slaves[port].inited == true) {
                 ret = soft_i2c_deinit(&(i2c_slaves[port]));
                 if (ret != ESP_OK) {
@@ -1115,13 +1110,23 @@ void task_soft_i2c_config(void *pvParameters)
                     ret = MXDBG_ERR_SOFT_I2C_DEINIT_FAILED;
                 }
             }
-            else
-            {
-                ret = soft_i2c_init(&(i2c_slaves[port]));
-                if (ret != ESP_OK) {
-                    ESP_LOGE(TAG, "I2C init failed");
-                    ret = MXDBG_ERR_SOFT_I2C_INIT_FAILED;
-                }
+
+            i2c_slaves[port].port = port;
+            i2c_slaves[port].sclk = scl_pin;
+            i2c_slaves[port].sdio = sda_pin;
+            i2c_slaves[port].pullup_en = pullup_en;
+            i2c_slaves[port].clk_speed = clock_speed;
+
+            if (ns > 0) {
+                i2c_slaves[port].ns = ns;
+            } else {
+                i2c_slaves[port].ns = 0;
+            }
+
+            ret = soft_i2c_init(&(i2c_slaves[port]));
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "I2C init failed");
+                ret = MXDBG_ERR_SOFT_I2C_INIT_FAILED;
             }
 
             data_pack(NULL, 0, TASK_SOFT_I2C_CONFIG, ret);
@@ -1186,6 +1191,10 @@ void task_soft_i2c_write_read(void *pvParameters)
             }
             xSemaphoreGive(semaphore_task_notify);
 
+            free(write_data_list);
+            free(read_data_list);
+            write_data_list = NULL;
+            read_data_list = NULL; // 避免悬挂指针
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));

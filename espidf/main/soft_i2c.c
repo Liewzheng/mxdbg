@@ -14,6 +14,9 @@
  *---------------------------------------------------------------------------*/
 
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
 #include "esp_err.h"
 
 #include "driver/gpio.h"
@@ -29,8 +32,6 @@
 
  #define DEVICE_ID_TRANSMIT(x) (uint8_t)((x << 1) & 0xFE)
  #define DEVICE_ID_RECEIVE(x)  (uint8_t)((x << 1) | 0x01)
-
- #define CPU_CLOCK_PERIOD (CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ / 1000)
 
 /*-----------------------------------------------------------------------------
  * EXTERNAL FUNCTIONS
@@ -61,16 +62,17 @@ soft_i2c_port_t i2c_slaves[8] = {
  * STATIC FUNCTIONS
  *---------------------------------------------------------------------------*/
 
-void IRAM_ATTR I2C_DELAY(uint8_t ns) {
+volatile static inline void I2C_DELAY(uint32_t ns) {
     if (ns == 0) {
         return;
     }
-    uint32_t cycles = ns * CPU_CLOCK_PERIOD;
-    uint32_t start = xthal_get_ccount();
-    while (xthal_get_ccount() - start < cycles) {}
+    for (uint32_t i = 0; i < ns; i++) {
+        __asm__ volatile ("nop");
+        __asm__ volatile ("nop");
+    }
 }
 
-static void i2c_start(soft_i2c_port_t* slave)
+static inline void i2c_start(soft_i2c_port_t* slave)
 {
     gpio_set_level(slave->sdio, 1);
     I2C_DELAY(slave->ns);
@@ -83,7 +85,7 @@ static void i2c_start(soft_i2c_port_t* slave)
     I2C_DELAY(slave->ns);
 }
  
-static void i2c_stop(soft_i2c_port_t* slave)
+static inline void i2c_stop(soft_i2c_port_t* slave)
 {
     gpio_set_level(slave->sdio, 0);
     I2C_DELAY(slave->ns);
@@ -95,7 +97,7 @@ static void i2c_stop(soft_i2c_port_t* slave)
     I2C_DELAY(slave->ns);
 }
 
-static int i2c_send_ack(soft_i2c_port_t* slave, bool ack_or_nack)
+static inline int i2c_send_ack(soft_i2c_port_t* slave, bool ack_or_nack)
 {
     uint8_t tmp = 0;
 
@@ -110,13 +112,13 @@ static int i2c_send_ack(soft_i2c_port_t* slave, bool ack_or_nack)
     return tmp;
 }
 
-static uint8_t i2c_get_ack(soft_i2c_port_t* slave)
+static inline uint8_t i2c_get_ack(soft_i2c_port_t* slave)
 {
     uint8_t tmp = 0;
 
     gpio_set_level(slave->sclk, 1);
     tmp = gpio_get_level(slave->sdio);  // 在高电平下读取数据
-    I2C_DELAY(slave->ns);
+    I2C_DELAY(slave->ns / 2);
 
     gpio_set_level(slave->sclk, 0);
     I2C_DELAY(slave->ns);
@@ -124,7 +126,7 @@ static uint8_t i2c_get_ack(soft_i2c_port_t* slave)
     return tmp;
 }
 
-static int i2c_read(soft_i2c_port_t* slave, uint8_t* data)
+static inline int i2c_read(soft_i2c_port_t* slave, uint8_t* data)
 {
     uint8_t tmp[8];
     uint8_t tmp_data = 0;
@@ -146,7 +148,7 @@ static int i2c_read(soft_i2c_port_t* slave, uint8_t* data)
     return 0;
 }
 
-static int i2c_write(soft_i2c_port_t* slave, uint8_t data)
+static inline int i2c_write(soft_i2c_port_t* slave, uint8_t data)
 {
     uint8_t tmp[8];
 
@@ -163,7 +165,6 @@ static int i2c_write(soft_i2c_port_t* slave, uint8_t data)
 
     return 0;
 }
-
  
 /*-----------------------------------------------------------------------------
 * FUNCITON DEFINITIONS
@@ -208,25 +209,28 @@ esp_err_t soft_i2c_init(soft_i2c_port_t* slave)
         return -3;
     }
 
-    // Set the I2C clock speed
-    if ((slave->clk_speed > 0) && (slave->clk_speed <= 1000000)) { // 1MHz max
-        if (slave->clk_speed <= 100000)
-        {
-            slave->ns = 10;
-        }
-        else if (slave->clk_speed <= 400000)
-        {
-            slave->ns = 1;
+    if (slave->ns == 0)
+    {
+        // Set the I2C clock speed
+        if ((slave->clk_speed > 0) && (slave->clk_speed <= 1000000)) { // 1MHz max
+            if (slave->clk_speed <= 100000)
+            {
+                slave->ns = 113;
+            }
+            else if (slave->clk_speed <= 400000)
+            {
+                slave->ns = 15;
+            }
+            else
+            {
+                slave->ns = 0;
+            }
         }
         else
         {
-            slave->ns = 0;
+            ESP_LOGE("I2C", "Invalid I2C clock speed: %ld", slave->clk_speed);
+            return -4;
         }
-    }
-    else
-    {
-        ESP_LOGE("I2C", "Invalid I2C clock speed: %ld", slave->clk_speed);
-        return -4;
     }
 
     gpio_set_level(slave->sdio, 1); // Set SDIO high
@@ -284,7 +288,7 @@ esp_err_t soft_i2c_deinit(soft_i2c_port_t *port)
         return -3;
     }
 
-    slave->inited = false; // Mark the I2C port as deinitialized
+    memset(slave, 0, sizeof(soft_i2c_port_t)); // Clear the I2C port structure
 
     ESP_LOGI("I2C", "I2C port %d deinitialized successfully", port->port);
     return ESP_OK;
@@ -333,7 +337,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
         if (ack != 0) {
             // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
             i2c_stop(slave);
-            return -1;
+            return -2;
         }
 
         for (int i = 0; i < write_length; i++) {
@@ -342,7 +346,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
             if (ack != 0) {
                 // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
                 i2c_stop(slave);
-                return -1;
+                return -2;
             }
         }
         i2c_stop(slave);
@@ -358,7 +362,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
         if (ack != 0) {
             // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
             i2c_stop(slave);
-            return -1;
+            return -3;
         }
 
         for (int i = 0; i < read_length; i++) {
@@ -381,7 +385,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
         if (ack != 0) {
             // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
             i2c_stop(slave);
-            return -1;
+            return -4;
         }
 
         for (int i = 0; i < write_length; i++) {
@@ -390,7 +394,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
             if (ack != 0) {
                 // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
                 i2c_stop(slave);
-                return -1;
+                return -4;
             }
         }
 
@@ -403,7 +407,7 @@ esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
         if (ack != 0) {
             // ESP_LOGE("I2C", "Failed to get ACK from slave device %d", slave_id);
             i2c_stop(slave);
-            return -1;
+            return -5;
         }
 
         for (int i = 0; i < read_length; i++) {

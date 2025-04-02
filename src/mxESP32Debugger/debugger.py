@@ -996,7 +996,7 @@ class Dbg:
     def soft_i2c_config(self,
                         port: int = 0, freq: int = 400000,
                         sda_pin: int = 20, scl_pin: int = 21,
-                        pullup_enable: bool = True) -> tuple:
+                        pullup_enable: bool = True, ns:int=0) -> tuple:
         
         if port < 0 or port > 7:
             raise ParametersError(
@@ -1016,7 +1016,8 @@ class Dbg:
         freq = ctypes.c_uint32(freq).value
         scl_pin = ctypes.c_uint8(scl_pin).value
         sda_pin = ctypes.c_uint8(sda_pin).value
-        pullup_enable = 0xFF if pullup_enable else 0x00
+        pullup_enable = ctypes.c_uint8(0xFF if pullup_enable else 0x00).value
+        ns = ctypes.c_uint32(ns).value
         
         soft_i2c_config_data_temp = [
             port, 
@@ -1025,6 +1026,8 @@ class Dbg:
             pullup_enable,
             (freq & 0xFF000000) >> 24, (freq & 0x00FF0000) >> 16,
             (freq & 0x0000FF00) >> 8,  (freq & 0x000000FF) >> 0,
+            (ns & 0xFF000000) >> 24, (ns & 0x00FF0000) >> 16,
+            (ns & 0x0000FF00) >> 8,  (ns & 0x000000FF) >> 0,
         ]
         
         ret, data = self.__task_execute(self.task_cmd["TASK_SOFT_I2C_CONFIG"], soft_i2c_config_data_temp)

@@ -28,7 +28,7 @@ typedef struct {
     bool pullup_en;
     bool inited;
     uint32_t clk_speed;
-    uint8_t ns;
+    uint32_t ns;
 } soft_i2c_port_t;
 
 

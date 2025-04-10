@@ -262,6 +262,8 @@ class Dbg:
         self.__power_init_status = False
         self.__expand_io_mode_bitmask = 0x0000
         
+        self.__low_freq_pwm_used = False
+        
         self.__adc_atten_dict = {
             0: {
                 'min_range': 0,     # mv
@@ -1288,6 +1290,56 @@ class Dbg:
             return True, data
         else:
             return False, None
+        
+    def low_freq_pwm_run_stop(self, pwm_running_state: bool) -> tuple:
+        
+        """
+        @brief Run or stop low frequency PWM.
+        @param pwm_running_state: True to run PWM, False to stop PWM.
+        @return: Return True if success, False otherwise.
+        """
+        
+        low_freq_pwm_data_temp = [ 0xFF if pwm_running_state else 0x00 ]
+        
+        ret, _ = self.__task_execute(self.task_cmd["TASK_LOW_FREQ_PWM_RUN_STOP"], low_freq_pwm_data_temp)
+        
+        self.__check_ret_code(self.task_cmd["TASK_LOW_FREQ_PWM_RUN_STOP"], ret)
+        
+        if ret != 0:
+            logger.error(f"Error: {ret}")
+            return False, None
+        else:
+            return True, None
+    
+    def low_freq_pwm_config(self, freq: int = 100, duty: float = 0.5) -> tuple:
+        
+        """
+        @brief Configure low frequency PWM.
+        @param freq: PWM frequency. Unit: Hz; (Default is `100` (100Hz). Frequency should be far less than timer resolution.)
+        @param duty: PWM duty cycle. (Default is `0.5` (50%). Duty cycle should be in the range of `0.0` (0%) to `1.0` (100%).)
+        """
+        
+        if duty < 0 or duty > 1:
+            logger.error("Invalid duty cycle. Duty cycle should be in the range of 0.0 to 1.0")
+            return False, None
+        
+        freq = ctypes.c_uint32(freq).value
+        duty = ctypes.c_uint32(int(duty * (2**14))).value
+        
+        low_freq_pwm_data_temp = [(freq & 0xFF000000) >> 24, (freq & 0x00FF0000) >> 16,
+                                  (freq & 0x0000FF00) >> 8, freq & 0x000000FF,
+                                  (duty & 0xFF000000) >> 24, (duty & 0x00FF0000) >> 16,
+                                  (duty & 0x0000FF00) >> 8, duty & 0x000000FF
+                                  ]
+        
+        ret, _ = self.__task_execute(self.task_cmd["TASK_LOW_FREQ_PWM_CONFIG"], low_freq_pwm_data_temp)
+        self.__check_ret_code(self.task_cmd["TASK_LOW_FREQ_PWM_CONFIG"], ret)
+        
+        if ret != 0:
+            logger.error(f"Error: {ret}")
+            return False, None
+        else:   
+            return True, None
 
     def pwm_run_stop(self, pwm_running_state: bool, channel: int = 0) -> tuple:
         '''
@@ -1300,6 +1352,9 @@ class Dbg:
         if channel not in [0, 1, 2]:
             logger.error("Invalid channel number. Available channels are 0, 1, 2.")
             return False, None
+        
+        if channel == 0 and self.__low_freq_pwm_used:
+            return self.low_freq_pwm_run_stop(pwm_running_state)
 
         channel = ctypes.c_uint8(channel).value
         run_state = ctypes.c_uint8(pwm_running_state).value
@@ -1348,6 +1403,15 @@ class Dbg:
         else:
             freq /= coeff
             freq = int(freq)
+            
+        if freq <= 1000 and channel == 0:
+            ret, data = self.low_freq_pwm_config(freq, duty)
+            if ret:
+                self.__low_freq_pwm_used = True
+                self.__pwm_states[channel] = True
+                return ret, data
+            else:
+                return False, None
 
         timer_resolution = ctypes.c_uint32(timer_resolution).value
         period_ticks = ctypes.c_uint32(resolution_hz // freq).value

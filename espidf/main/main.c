@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -25,6 +26,7 @@
 #include "driver/spi_master.h"
 #include "driver/spi_slave.h"
 #include "driver/mcpwm_prelude.h"
+#include "driver/ledc.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -75,6 +77,8 @@ void task_spi_write_read(void *pvParameters);
 void task_spi_config(void *pvParameters);
 void task_pwm_run_stop(void *pvParameters);
 void task_pwm_config(void *pvParameters);
+void task_low_freq_pwm_run_stop(void *pvParameters);
+void task_low_freq_pwm_config(void *pvParameters);
 void task_adc_read(void *pvParameters);
 void task_adc_config(void *pvParameters);
 void task_spi_read_image(void *pvParameters);
@@ -112,11 +116,16 @@ SemaphoreHandle_t semaphore_spi_config;
 SemaphoreHandle_t semaphore_pwm_run_stop;
 SemaphoreHandle_t semaphore_pwm_config;
 
+SemaphoreHandle_t semaphore_low_freq_pwm_run_stop;
+SemaphoreHandle_t semaphore_low_freq_pwm_config;
+
+SemaphoreHandle_t semaphore_pwm_running_state;  // Mutex
+SemaphoreHandle_t semaphore_low_freq_pwm_running_state; // Mutex
+
 SemaphoreHandle_t semaphore_adc_read;
 SemaphoreHandle_t semaphore_adc_config;
 
-SemaphoreHandle_t semaphore_pwm_running_state;
-SemaphoreHandle_t semaphore_usb_total_rx_size;
+SemaphoreHandle_t semaphore_usb_total_rx_size;  // Mutex
 
 SemaphoreHandle_t semaphore_spi_read_image;
 
@@ -152,7 +161,7 @@ i2c_config_t i2c_conf1 = { .mode = I2C_MODE_MASTER,
                            .scl_pullup_en = GPIO_PULLUP_ENABLE,
                            .master.clk_speed = 400000 };
 
-// PWM
+// PWM (MCPWM)
 
 #define MAX_PWM_CHANNELS 3
 
@@ -177,6 +186,30 @@ typedef struct {
 } pwm_channel_t;
 
 pwm_channel_t pwm_channels[MAX_PWM_CHANNELS];
+
+// PWM (LEDC)
+
+ledc_timer_config_t ledc_timer_configuration = {
+    .speed_mode = LEDC_LOW_SPEED_MODE,
+    .timer_num = LEDC_TIMER_0,
+    .duty_resolution = LEDC_TIMER_14_BIT,
+    .freq_hz = 100, // Set output frequency at 1 kHz
+    .clk_cfg = LEDC_AUTO_CLK,
+};
+
+ledc_channel_config_t ledc_channel_configuration = {
+    .speed_mode = LEDC_LOW_SPEED_MODE,
+    .channel = LEDC_CHANNEL_0,
+    .intr_type = LEDC_INTR_DISABLE,
+    .timer_sel = LEDC_TIMER_0,
+    .duty = 0, // Set duty to 0
+    .hpoint = 0,
+    .gpio_num = 16, // GPIO number for output
+    .flags.output_invert = 0,
+};
+
+bool low_freq_pwm_run_state = false;
+uint32_t low_freq_pwm_duty = 0;
 
 // SPI
 
@@ -442,6 +475,31 @@ void pwm_deinit(pwm_channel_t *channel)
     ESP_ERROR_CHECK(mcpwm_del_comparator(channel->comparator));
     ESP_ERROR_CHECK(mcpwm_del_operator(channel->operator));
     ESP_ERROR_CHECK(mcpwm_del_timer(channel->timer));
+}
+
+void low_freq_pwm_init(void)
+{
+    // 1. 创建 LEDC 定时器
+    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer_configuration));
+
+    // 2. 创建 LEDC 通道
+    ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel_configuration));
+}
+
+void low_freq_pwm_deinit(void)
+{
+
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+
+    // 1. 停止 LEDC 通道
+    ESP_ERROR_CHECK(ledc_stop(ledc_channel_configuration.speed_mode, ledc_channel_configuration.channel, 0));
+
+    // 2. 删除 LEDC 通道
+    // ESP_ERROR_CHECK(ledc_channel_deinit(ledc_channel_configuration.speed_mode, ledc_channel_configuration.channel));
+
+    // 3. 删除 LEDC 定时器
+    // ESP_ERROR_CHECK(ledc_timer_deinit(ledc_timer_configuration.speed_mode, ledc_timer_configuration.timer_num));
 }
 
 void spi_handshake_init(void)
@@ -869,6 +927,16 @@ void task_duty_call(void *pvParameters)
                 case TASK_PWM_CONFIG:
 
                     xSemaphoreGive(semaphore_pwm_config);
+                    break;
+
+                case TASK_LOW_FREQ_PWM_CONFIG:
+
+                    xSemaphoreGive(semaphore_low_freq_pwm_config);
+                    break;
+
+                case TASK_LOW_FREQ_PWM_RUN_STOP:
+
+                    xSemaphoreGive(semaphore_low_freq_pwm_run_stop);
                     break;
 
                 case TASK_SPI_READ_IMAGE:
@@ -1806,6 +1874,15 @@ void task_pwm_config(void *pvParameters)
             duty_cycle_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[6]));
             resolution_hz = DATA_SYNTHESIS_4_BYTES(&(com_data_content[10]));
 
+            if ((xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) && (channel == 0))
+            {
+                if (low_freq_pwm_run_state)
+                {
+                    low_freq_pwm_run_state = false;
+                    low_freq_pwm_deinit();
+                }
+            }
+
             ESP_LOGI(TAG, "Channel: %d; GPIO: %d; period_ticks: %ld; duty_cycle_ticks: %ld", channel, gen_gpio_num,
                      period_ticks, duty_cycle_ticks);
 
@@ -1860,6 +1937,113 @@ void task_pwm_config(void *pvParameters)
     }
 
     vTaskDelete(NULL);
+}
+
+void task_low_freq_pwm_config(void *pvParameters)
+{
+    while (1){
+        if (xSemaphoreTake(semaphore_low_freq_pwm_config, portMAX_DELAY) == pdTRUE)
+        {
+            uint32_t freq = DATA_SYNTHESIS_4_BYTES(&(com_data_content[0]));
+            uint32_t duty = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
+
+            if (freq > 1000)
+            {
+                ESP_LOGE(TAG, "Invalid frequency");
+                data_pack(NULL, 0, TASK_LOW_FREQ_PWM_CONFIG, MXDBG_ERR_PWM_INVALID_FREQUENCY);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            }
+
+            ESP_LOGI(TAG, "Low frequency PWM frequency: %ld; duty: %ld", freq, duty);
+
+            ledc_timer_configuration.freq_hz = freq;
+            low_freq_pwm_duty = duty;
+
+            // 检查下 semaphore_pwm_running_state 是否已经停止
+            // 如果没停止，则 stop 后 pwm_deinit() 它
+            //
+            // 如果停止了：
+            //    检查 semaphore_low_freq_pwm_running_state 是否已停止，
+            //    如果没停止，则 stop 后，low_freq_pwm_deinit() 它，
+            // 
+            // 最后进行 low_freq_pwm_init()
+            
+            bool low_freq_pwm_run = false;
+
+            if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE)
+            {
+                if (pwm_channels[0].run_state)
+                {
+                    pwm_channels[0].run_state = false;
+                    pwm_deinit(&(pwm_channels[0]));
+                }
+            }
+
+            if (xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE)
+            {
+                if (low_freq_pwm_run_state)
+                {
+
+                    low_freq_pwm_run = true;
+                    low_freq_pwm_run_state = false;
+                    low_freq_pwm_deinit();
+                }
+            }
+
+            low_freq_pwm_init();
+
+            if (low_freq_pwm_run)
+            {
+                ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+                ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+            }
+
+            data_pack(NULL, 0, TASK_LOW_FREQ_PWM_CONFIG, 0);
+
+            xSemaphoreGive(semaphore_task_notify);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+}
+
+void task_low_freq_pwm_run_stop(void *pvParameters)
+{
+    while (1){
+        if (xSemaphoreTake(semaphore_low_freq_pwm_run_stop, portMAX_DELAY) == pdTRUE) {
+            bool pwm_run_state = com_data_content[0] != 0 ? true : false;
+
+            ESP_LOGI(TAG, "Run state: %s", (pwm_run_state ? "True" : "False"));
+            ESP_LOGI(TAG, "Low frequency PWM duty: %ld", low_freq_pwm_duty);
+
+            if (pwm_run_state) {              // True
+                ESP_LOGI(TAG, "Low frequency PWM run");
+                ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, low_freq_pwm_duty);
+
+                if (xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) {
+                    low_freq_pwm_run_state = true;
+                    xSemaphoreGive(semaphore_low_freq_pwm_running_state);
+                }
+
+            } else {
+                ESP_LOGI(TAG, "Low frequency PWM stop");
+                ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+                if (xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) {
+                    low_freq_pwm_run_state = false;
+                    xSemaphoreGive(semaphore_low_freq_pwm_running_state);
+                }
+            }
+
+            ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+
+            data_pack(NULL, 0, TASK_LOW_FREQ_PWM_RUN_STOP, 0);
+
+            xSemaphoreGive(semaphore_task_notify);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
 
 void task_adc_config(void *pvParameters)
@@ -2246,6 +2430,21 @@ void usb_cdc_mxdbg_main()
         ESP_LOGE(TAG, "Failed to create semaphore_pwm_running_state");
     }
 
+    semaphore_low_freq_pwm_config = xSemaphoreCreateBinary();
+    if (semaphore_low_freq_pwm_config == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_low_freq_pwm_config");
+    }
+
+    semaphore_low_freq_pwm_run_stop = xSemaphoreCreateBinary();
+    if (semaphore_low_freq_pwm_run_stop == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_low_freq_pwm_run_stop");
+    }
+
+    semaphore_low_freq_pwm_running_state = xSemaphoreCreateMutex();
+    if (semaphore_low_freq_pwm_running_state == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore_low_freq_pwm_running_state");
+    }
+
     semaphore_adc_config = xSemaphoreCreateBinary();
     if (semaphore_adc_config == NULL) {
         ESP_LOGE(TAG, "Failed to create semaphore_adc_config");
@@ -2290,6 +2489,9 @@ void usb_cdc_mxdbg_main()
 
     xTaskCreate(task_pwm_run_stop, "task_pwm_run_stop", 4096, NULL, 4, NULL);
     xTaskCreate(task_pwm_config, "task_pwm_config", 4096, NULL, 4, NULL);
+
+    xTaskCreate(task_low_freq_pwm_run_stop, "task_low_freq_pwm_run_stop", 4096, NULL, 4, NULL);
+    xTaskCreate(task_low_freq_pwm_config, "task_low_freq_pwm_config", 4096, NULL, 4, NULL);
 
     xTaskCreate(task_adc_config, "task_adc_config", 4096, NULL, 4, NULL);
     xTaskCreate(task_adc_read, "task_adc_read", 8192, NULL, 4, NULL);

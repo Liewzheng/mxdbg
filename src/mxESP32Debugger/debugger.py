@@ -819,7 +819,7 @@ class Dbg:
         found_device_list = []
         for slave_id in (range(0x04, 0x7F) if slaves == [] else slaves):
             try:
-                ret, data = self.i2c_write_read(slave_id, [0x00], 0, port=port)
+                ret, data = self.i2c_write_read(slave_id, [0x00], 0, port=port, check_ret=False)
                 if ret:
                     found_device_list.append(slave_id)
             except Exception:
@@ -836,7 +836,8 @@ class Dbg:
                        write_list: list,
                        read_length: int,
                        port: int = 0,
-                       slave_id_10_bit: bool = False) -> tuple:
+                       slave_id_10_bit: bool = False,
+                       check_ret:bool=True) -> tuple:
         '''
         @brief Write and read data from I2C slave device. The default I2C pin is SDA: `10`, SCL: `11`.
         @param slave_id: I2C slave device address. (e.g., `0x04`.)
@@ -881,6 +882,9 @@ class Dbg:
 
         # 执行任务并读取返回的数据
         ret, data = self.__task_execute(self.task_cmd["TASK_I2C_WRITE_READ"], i2c_data_temp)
+        
+        if check_ret:
+            self.__check_ret_code(self.task_cmd["TASK_I2C_WRITE_READ"], ret)
 
         data = list(data) if data is not None else None
 

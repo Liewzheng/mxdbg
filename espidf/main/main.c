@@ -2220,14 +2220,14 @@ uint8_t get_usb_mode(void)
     esp_err_t ret = ESP_OK;
     gpio_config_t mode_high = {
         .pin_bit_mask = (1ULL << GPIO_NUM_1),
-        .mode = GPIO_MODE_INPUT,
+        .mode = GPIO_MODE_INPUT_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config_t mode_low = {
         .pin_bit_mask = (1ULL << GPIO_NUM_5),
-        .mode = GPIO_MODE_OUTPUT,
+        .mode = GPIO_MODE_INPUT_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
@@ -2248,7 +2248,7 @@ uint8_t get_usb_mode(void)
 
     uint8_t mode = 0;
 
-    mode = gpio_get_level(GPIO_NUM_5) << 1 | gpio_get_level(GPIO_NUM_1);
+    mode = (gpio_get_level(GPIO_NUM_5) << 1) | gpio_get_level(GPIO_NUM_1);
     return mode;
 }
 
@@ -2643,8 +2643,8 @@ void app_main()
 {
     enum usb_mode
     {
-        USB_MODE_CDC= 0,  // 00
-        USB_MODE_HID,
+        USB_MODE_CDC = 0,  // 00
+        USB_MODE_HID, // 01
     };
 
     uint8_t usb_mode = get_usb_mode();
@@ -2662,6 +2662,8 @@ void app_main()
             break;
             
         default:
+            ESP_LOGI(TAG, "(Default) USB mode: CDC");
+            usb_cdc_mxdbg_main();
             break;
     }
 }

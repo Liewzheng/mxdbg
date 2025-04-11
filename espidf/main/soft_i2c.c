@@ -107,7 +107,8 @@ static inline int i2c_send_ack(soft_i2c_port_t* slave, bool ack_or_nack)
     I2C_DELAY(slave->ns);
 
     gpio_set_level(slave->sclk, 0);
-    I2C_DELAY(slave->ns);
+    I2C_DELAY(slave->ns * 1.25);
+    gpio_set_level(slave->sdio, 1); // 释放总线
 
     return tmp;
 }
@@ -118,15 +119,15 @@ static inline uint8_t i2c_get_ack(soft_i2c_port_t* slave)
 
     gpio_set_level(slave->sclk, 1);
     tmp = gpio_get_level(slave->sdio);  // 在高电平下读取数据
-    I2C_DELAY(slave->ns / 2);
+    I2C_DELAY(slave->ns);
 
     gpio_set_level(slave->sclk, 0);
-    I2C_DELAY(slave->ns);
+    I2C_DELAY(slave->ns * 2);
 
     return tmp;
 }
 
-static inline int i2c_read(soft_i2c_port_t* slave, uint8_t* data)
+static inline void i2c_read(soft_i2c_port_t* slave, uint8_t* data)
 {
     uint8_t tmp[8];
     uint8_t tmp_data = 0;
@@ -144,11 +145,9 @@ static inline int i2c_read(soft_i2c_port_t* slave, uint8_t* data)
     }
 
     *data = tmp_data;
-
-    return 0;
 }
 
-static inline int i2c_write(soft_i2c_port_t* slave, uint8_t data)
+static inline void i2c_write(soft_i2c_port_t* slave, uint8_t data)
 {
     uint8_t tmp[8];
 
@@ -162,8 +161,6 @@ static inline int i2c_write(soft_i2c_port_t* slave, uint8_t data)
         gpio_set_level(slave->sclk, 0);
         I2C_DELAY(slave->ns);
     }
-
-    return 0;
 }
  
 /*-----------------------------------------------------------------------------
@@ -294,13 +291,15 @@ esp_err_t soft_i2c_deinit(soft_i2c_port_t *port)
     return ESP_OK;
 }
 
-esp_err_t soft_i2c_write_read(soft_i2c_port_t *port,
-     uint8_t slave_id,
-     uint8_t *write_list,
-     size_t write_length,
-     uint8_t *read_list,
-     size_t read_length,
-     uint32_t ticks_to_wait)
+esp_err_t soft_i2c_write_read(
+    soft_i2c_port_t *port,
+    uint8_t slave_id,
+    uint8_t *write_list,
+    size_t write_length,
+    uint8_t *read_list,
+    size_t read_length,
+    uint32_t ticks_to_wait
+)
 {
     // Check if the I2C port is valid
     if (port == NULL || port->inited == false) {

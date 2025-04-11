@@ -808,6 +808,29 @@ class Dbg:
                     break
             logger.error(f"Error code: 0x{ctypes.c_uint32(error_code).value:08X}, Description: {error_desc}")
 
+    def soft_i2c_find_slave(self, port: int = 0, slaves:list=[]) -> tuple:
+        
+        '''
+        @brief Find Soft I2C slave devices.
+        @param port: Soft I2C port number. Default is `0`. (Available port number is `0` to `6`)
+        @return: List of I2C slave devices.
+        '''
+
+        found_device_list = []
+        for slave_id in (range(0x04, 0x7F) if slaves == [] else slaves):
+            try:
+                ret, data = self.soft_i2c_write_read(slave_id, [0x00], 1, port=port, check_ret=False)
+                if ret == True:
+                    found_device_list.append(slave_id)
+            except Exception:
+                continue
+
+        if found_device_list != []:
+            found_device_list = ['0x{:02X}'.format(slave_id) for slave_id in found_device_list]
+            return True, found_device_list
+        else:
+            return False, None
+
     def i2c_find_slave(self, port: int = 0, slaves:list=[]) -> tuple:
         
         '''
@@ -956,6 +979,7 @@ class Dbg:
                        write_list: list,
                        read_length: int,
                        port: int = 0,
+                       check_ret:bool=True
                        ) -> tuple:
 
         if port < 0 or port > 7:
@@ -993,7 +1017,8 @@ class Dbg:
         
         ret, data = self.__task_execute(self.task_cmd["TASK_SOFT_I2C_WRITE_READ"], soft_i2c_write_read_data_temp)
         if ret != 0:
-            self.__check_ret_code(self.task_cmd["TASK_SOFT_I2C_WRITE_READ"], ret)
+            if check_ret:
+                self.__check_ret_code(self.task_cmd["TASK_SOFT_I2C_WRITE_READ"], ret)
             return False, None
         else:
             data = list(data) if data is not None else None

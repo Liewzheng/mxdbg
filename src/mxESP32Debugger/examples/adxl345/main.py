@@ -13,6 +13,8 @@ class SensorVisualizer(QWidget):
         self.initUI()
         self.initSensor()
         self.startUpdates()
+        
+        self.calibration = [0, 0, 0]  # 校准偏移量
 
     def initUI(self):
         # 主布局
@@ -63,15 +65,35 @@ class SensorVisualizer(QWidget):
             self.y_label.setText(f"Y: {y:.2f} mg")
             self.z_label.setText(f"Z: {z:.2f} mg")
             self.cube.updateOrientation(x, y, z)
+            
+    def calibrate_sensor(self):
+        # 采集10次数据取平均
+        samples = [get_gravity_data(slave_addr=self.slave_addr) for _ in range(10)]
+        avg_x = sum(s[0] for s in samples) / 10
+        avg_y = sum(s[1] for s in samples) / 10 
+        avg_z = sum(s[2] for s in samples) / 10
+        
+        # 理想值应为（0, 0, 1000）当水平静止时
+        self.calibration = [avg_x, avg_y, 1000 - avg_z]
+        
+    def get_calibrated_data(self):
+        raw = get_gravity_data(slave_addr=self.slave_addr)
+        return (
+            raw[0] - self.calibration[0],
+            raw[1] - self.calibration[1],
+            raw[2] + self.calibration[2]
+        )
 
 class CubeItem(QGraphicsItem):
     def __init__(self):
         super().__init__()
         self.rotation = {'x': 0, 'y': 0, 'z': 0}
         self.size = 100
+        self.setTransformOriginPoint(500, 1000)  # 关键修正点
+        self.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
         
     def boundingRect(self):
-        return QRectF(-self.size, -self.size, 2*self.size, 2*self.size)
+        return QRectF(-self.size/2, -self.size/2, self.size, self.size)
 
     def updateOrientation(self, x, y, z):
         # 加速度转换为旋转角度（简化处理）
@@ -79,44 +101,60 @@ class CubeItem(QGraphicsItem):
         self.rotation['y'] = x / 1000 * 45
         self.rotation['z'] = z / 1000 * 45
         self.update()
+        self.scene().views()[0].viewport().update()  # 更新视图
 
     def paint(self, painter, option, widget):
-        # 绘制3D立方体
-        painter.setPen(QPen(Qt.black, 2))
+        # 增加坐标系矫正
+        painter.save()
         transform = QTransform()
+        # transform.translate(self.size/2, self.size/2)
+        painter.translate(-self.size/2, -self.size/2)
         
-        # 应用3D旋转（简化2D投影）
-        transform.translate(self.size/2, self.size/2)
-        transform.rotate(self.rotation['x'], Qt.XAxis)
-        transform.rotate(self.rotation['y'], Qt.YAxis)
+        # 修正旋转顺序（ZYX欧拉角）
         transform.rotate(self.rotation['z'], Qt.ZAxis)
-        painter.setTransform(transform)
-
-        # 绘制立方体线框
-        half = self.size / 2
-        points = [
-            QPointF(-half, -half),
-            QPointF(half, -half),
-            QPointF(half, half),
-            QPointF(-half, half),
-            QPointF(-half, -half)
-        ]
-        painter.drawPolygon(points)
+        transform.rotate(self.rotation['y'], Qt.YAxis) 
+        transform.rotate(self.rotation['x'], Qt.XAxis)
         
-        # 添加深度线
-        depth = half * 0.8
-        painter.drawLine(QPointF(-half, -half), QPointF(-half + depth, -half - depth))
-        painter.drawLine(QPointF(half, -half), QPointF(half + depth, -half - depth))
-        painter.drawLine(QPointF(half, half), QPointF(half + depth, half - depth))
+        painter.setTransform(transform)
+        
+        # 修正立方体绘制（增加透视效果）
+        self.draw_cube(painter)
+        painter.restore()
+
+    def draw_cube(self, painter):
+        size = self.size * 0.8
+        depth = size * 0.5  # 透视系数
+        
+        # 前表面
+        painter.drawRect(-size/2, -size/2, size, size)
+        
+        # 侧面透视
+        side_points = [
+            QPointF(size/2, -size/2),
+            QPointF(size/2 + depth, -size/2 - depth),
+            QPointF(size/2 + depth, size/2 - depth),
+            QPointF(size/2, size/2)
+        ]
+        painter.drawPolygon(side_points)
+        
+        # 顶部透视
+        top_points = [
+            QPointF(-size/2, -size/2),
+            QPointF(-size/2 + depth, -size/2 - depth),
+            QPointF(size/2 + depth, -size/2 - depth),
+            QPointF(size/2, -size/2)
+        ]
+        painter.drawPolygon(top_points)
 
 # 修改主程序部分
 if __name__ == "__main__":
     # 初始化传感器
-    import sys, os, ctypes
+    import sys, os
     sys.path.append(r'F:\gitlab\mxdbg\src')
     from mxESP32Debugger.debugger import Dbg as MXDBG
     import toml
     from loguru import logger
+    import struct
     
     dev = MXDBG()
     dev.power_init()
@@ -136,7 +174,7 @@ if __name__ == "__main__":
         ret, data = dev.i2c_write_read(port=0, slave_id=slave_addr, write_list=reg, read_length=0)
         assert ret == True, f"Failed to write register {reg:#04x}"
     
-    def get_gravity_data(slave_addr):
+    def get_gravity_data(slave_addr=0x53):
         ret, data = dev.i2c_write_read(port=0, slave_id=slave_addr, write_list=[0x32], read_length=6)
         if ret != True:
             print("Error reading data")
@@ -144,9 +182,9 @@ if __name__ == "__main__":
 
         data = bytearray(data)
 
-        x = ctypes.c_int16.from_buffer_copy(data[0:2]).value * 3.9
-        y = ctypes.c_int16.from_buffer_copy(data[2:4]).value * 3.9
-        z = ctypes.c_int16.from_buffer_copy(data[4:6]).value * 3.9
+        x = struct.unpack("<h", data[0:2])[0] * 3.9
+        y = struct.unpack("<h", data[2:4])[0] * 3.9
+        z = struct.unpack("<h", data[4:6])[0] * 3.9
 
         return x, y, z
 

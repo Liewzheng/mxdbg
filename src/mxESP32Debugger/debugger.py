@@ -860,7 +860,10 @@ class Dbg:
                        read_length: int,
                        port: int = 0,
                        slave_id_10_bit: bool = False,
-                       check_ret:bool=True) -> tuple:
+                       check_ret:bool=True,
+                       repeat:int=0,
+                       repeat_delay_us:int=0,
+                       **kwargs) -> tuple:
         '''
         @brief Write and read data from I2C slave device. The default I2C pin is SDA: `10`, SCL: `11`.
         @param slave_id: I2C slave device address. (e.g., `0x04`.)
@@ -878,11 +881,18 @@ class Dbg:
         if slave_id < 0x04 or slave_id > 0x07FF:
             logger.error("Invalid slave, the available slave id is between 0x04 and 0x07FF.")
             raise ValueError("Invalid slave, the available slave id is between 0x04 and 0x07FF.")
+        
+        if repeat * read_length > 2048:
+            logger.error("Repeat times and read length should be less than 2048.")
+            raise ValueError("Repeat times and read length should be less than 2048.")
 
         # 构造要发送的数据包
         slave_id = slave_id if not slave_id_10_bit else slave_id & 0x07FF
         wirte_len = len(write_list)
         read_len = read_length
+        
+        repeat = ctypes.c_uint32(repeat).value
+        repeat_delay_us = ctypes.c_uint32(repeat_delay_us).value
         
         if wirte_len <= 0 and read_len <= 0:
             logger.error("Write length and read length should be greater than 0.")
@@ -901,6 +911,12 @@ class Dbg:
                          (wirte_len & 0x0000FF00) >> 8, wirte_len & 0x000000FF,
                          (read_len & 0xFF000000) >> 24, (read_len & 0x00FF0000) >> 16,
                          (read_len & 0x0000FF00) >> 8, read_len & 0x000000FF]
+        
+        i2c_data_temp += [(repeat & 0xFF000000) >> 24, (repeat & 0x00FF0000) >> 16,
+                          (repeat & 0x0000FF00) >> 8, repeat & 0x000000FF,
+                          (repeat_delay_us & 0xFF000000) >> 24, (repeat_delay_us & 0x00FF0000) >> 16,
+                          (repeat_delay_us & 0x0000FF00) >> 8, repeat_delay_us & 0x000000FF]
+        
         i2c_data_temp += write_list
 
         # 执行任务并读取返回的数据

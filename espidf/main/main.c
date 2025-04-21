@@ -1014,6 +1014,8 @@ void task_i2c_write_read(void *pvParameters)
     size_t write_length = 0, read_length = 0;
     uint8_t *write_data_list = NULL;
     uint8_t *read_data_list = NULL;
+    uint32_t repeat = 0;
+    uint32_t repeat_delay_us = 0;
 
     while (1) {
         if (xSemaphoreTake(semaphore_i2c_write_read, portMAX_DELAY) == pdTRUE) {
@@ -1025,6 +1027,8 @@ void task_i2c_write_read(void *pvParameters)
             slave_id = DATA_SYNTHESIS_2_BYTES(&(com_data_content[1]));
             write_length = DATA_SYNTHESIS_4_BYTES(&(com_data_content[3]));
             read_length = DATA_SYNTHESIS_4_BYTES(&(com_data_content[7]));
+            repeat = DATA_SYNTHESIS_4_BYTES(&(com_data_content[11]));
+            repeat_delay_us = DATA_SYNTHESIS_4_BYTES(&(com_data_content[15]));
 
             // ESP_LOGI(TAG, "I2C port: %d, slave id: %d, write length: %d, read length: %d", i2c_port, slave_id,
             //          write_length, read_length);
@@ -1032,21 +1036,30 @@ void task_i2c_write_read(void *pvParameters)
             if (write_length > 0) {
                 write_data_list = (uint8_t *)malloc(write_length);
                 if (write_data_list) {
-                    memcpy(write_data_list, &com_data_content[11], write_length);
+                    memcpy(write_data_list, &com_data_content[19], write_length);
                 } else {
                     ESP_LOGE(TAG, "Memory allocation failed");
                 }
 
                 if (read_length > 0) {
-                    read_data_list = (uint8_t *)malloc(read_length);
+                    read_data_list = (uint8_t *)malloc(repeat == 0 ? read_length : repeat * read_length);
                     if (read_data_list) {
-                        // Write and read data
-                        ret = i2c_master_write_read_device(i2c_port, slave_id, write_data_list, write_length,
-                                                           read_data_list, read_length, 1000 / portTICK_PERIOD_MS);
-                        if (ret != ESP_OK) {
-                            ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
-                            ret = MXDBG_ERR_I2C_WRITE_READ_FAILED;
-                        }
+                        uint32_t repeat_index = 0;
+                        do{
+                            // Write and read data
+                            ret = i2c_master_write_read_device(i2c_port, slave_id, write_data_list, write_length,
+                                                            (read_data_list + repeat_index * read_length), read_length, 1000 / portTICK_PERIOD_MS);
+                            if (ret != ESP_OK) {
+                                ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
+                                ret = MXDBG_ERR_I2C_WRITE_READ_FAILED;
+                            }
+
+                            if (repeat != 0)
+                            {
+                                vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
+                                repeat_index++;
+                            }
+                        }while(repeat_index < repeat);
                     } else {
                         ESP_LOGE(TAG, "Memory allocation failed, ret: %d", ret);
                         ret = ESPRESSIF_ERR_NO_MEM;
@@ -1062,15 +1075,27 @@ void task_i2c_write_read(void *pvParameters)
                 }
             } else {
                 if (read_length > 0) {
-                    read_data_list = (uint8_t *)malloc(read_length);
+                    read_data_list = (uint8_t *)malloc(repeat == 0 ? read_length : repeat * read_length);
                     if (read_data_list) {
+                        uint32_t repeat_index = 0;
                         // Read data only
-                        ret = i2c_master_read_from_device(i2c_port, slave_id, read_data_list, read_length,
-                                                          1000 / portTICK_PERIOD_MS);
-                        if (ret != ESP_OK) {
-                            ESP_LOGE(TAG, "I2C read failed");
-                            ret = MXDBG_ERR_I2C_READ_FAILED;
-                        }
+                        do {
+                            ret = i2c_master_read_from_device(i2c_port, 
+                                                              slave_id, 
+                                                              (read_data_list + repeat_index * read_length), 
+                                                              read_length,
+                                                              1000 / portTICK_PERIOD_MS);
+                            if (ret != ESP_OK) {
+                                ESP_LOGE(TAG, "I2C read failed");
+                                ret = MXDBG_ERR_I2C_READ_FAILED;
+                            }
+
+                            if (repeat != 0)
+                            {
+                                vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
+                                repeat_index++;
+                            }
+                        } while(repeat_index < repeat);
                     } else {
                         ESP_LOGE(TAG, "Memory allocation failed");
                         ret = ESPRESSIF_ERR_NO_MEM;
@@ -1087,7 +1112,13 @@ void task_i2c_write_read(void *pvParameters)
                 }
             }
 
-            data_pack(read_data_list, read_length, TASK_I2C_WRITE_READ, ret);
+            // if (repeat)
+            // {
+            //     ESP_LOGI("TAG", "I2C write read repeat: %ld", repeat);
+            //     ESP_LOGI("TAG", "I2C write read repeat delay: %ld", repeat_delay_us);
+            //     ESP_LOG_BUFFER_HEXDUMP(TAG, read_data_list, repeat * read_length, ESP_LOG_INFO);
+            // }
+            data_pack(read_data_list, repeat == 0 ? read_length : repeat * read_length, TASK_I2C_WRITE_READ, ret);
 
             //--------------------------------------------------------------------------------
 

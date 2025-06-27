@@ -1172,13 +1172,6 @@ void task_i2c_write_read(void *pvParameters)
                                 repeat_index++;
                             }
                         } while(repeat_index < repeat);
-                    } else {
-                        ESP_LOGE(TAG, "Memory allocation failed for read_data_list");
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
                 } else {
                     // Invalid I2C operation
                     ESP_LOGE(TAG, "Invalid I2C operation");
@@ -1214,9 +1207,9 @@ void task_i2c_write_read(void *pvParameters)
             xSemaphoreGive(semaphore_task_notify);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
+
 
 void task_i2c_config(void *pvParameters)
 {

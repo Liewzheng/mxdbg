@@ -57,7 +57,7 @@ static uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
 #define DATA_SYNTHESIS_2_BYTES(data) ((*(data + 0)) << 8 | (*(data + 1)))
 
 // for spi slave ncs
-#define GPIO_HANDSHAKE      2
+#define GPIO_HANDSHAKE 2
 
 // ADC channels
 #define MAX_ADC_CHANNEL_NUM 8
@@ -90,7 +90,8 @@ void spi_slave_post_setup_cb(spi_slave_transaction_t *t);
 void spi_slave_post_trans_cb(spi_slave_transaction_t *t);
 
 // ADC
-bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data);
+bool IRAM_ATTR adc_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
+                                void *user_data);
 int adc_init(void);
 void adc_deinit(void);
 /*-----------------------------------------------------------------------------
@@ -119,13 +120,13 @@ SemaphoreHandle_t semaphore_pwm_config;
 SemaphoreHandle_t semaphore_low_freq_pwm_run_stop;
 SemaphoreHandle_t semaphore_low_freq_pwm_config;
 
-SemaphoreHandle_t semaphore_pwm_running_state;  // Mutex
+SemaphoreHandle_t semaphore_pwm_running_state;          // Mutex
 SemaphoreHandle_t semaphore_low_freq_pwm_running_state; // Mutex
 
 SemaphoreHandle_t semaphore_adc_read;
 SemaphoreHandle_t semaphore_adc_config;
 
-SemaphoreHandle_t semaphore_usb_total_rx_size;  // Mutex
+SemaphoreHandle_t semaphore_usb_total_rx_size; // Mutex
 
 SemaphoreHandle_t semaphore_spi_read_image;
 
@@ -231,14 +232,12 @@ spi_device_interface_config_t devcfg = {
     .cs_ena_pretrans = 0,
 };
 
-spi_slave_interface_config_t slvcfg = {
-    .spics_io_num = 15,
-    .flags = 0,
-    .queue_size = 3,
-    .mode = 0,
-    .post_setup_cb = spi_slave_post_setup_cb,
-    .post_trans_cb = spi_slave_post_trans_cb
-};
+spi_slave_interface_config_t slvcfg = { .spics_io_num = 15,
+                                        .flags = 0,
+                                        .queue_size = 3,
+                                        .mode = 0,
+                                        .post_setup_cb = spi_slave_post_setup_cb,
+                                        .post_trans_cb = spi_slave_post_trans_cb };
 
 uint8_t master_slave_mode = 0;
 
@@ -247,32 +246,22 @@ uint8_t master_slave_mode = 0;
 
 adc_continuous_handle_t adc_handle = NULL;
 adc_digi_pattern_config_t adc_pattern[MAX_ADC_CHANNEL_NUM] = {
-    {
-        .atten = ADC_ATTEN_DB_0,
-        .channel = 3 & 0x7,
-        .unit = ADC_UNIT_1,
-        .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH
-    },
-    {
-        .atten = ADC_ATTEN_DB_0,
-        .channel = 4 & 0x7,
-        .unit = ADC_UNIT_1,
-        .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH
-    }
+    { .atten = ADC_ATTEN_DB_0, .channel = 3 & 0x7, .unit = ADC_UNIT_1, .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH },
+    { .atten = ADC_ATTEN_DB_0, .channel = 4 & 0x7, .unit = ADC_UNIT_1, .bit_width = SOC_ADC_DIGI_MAX_BITWIDTH }
 };
 adc_continuous_handle_cfg_t adc_config = {
-    .max_store_buf_size = 1024,  // 设置最大存储空间为 1KB
-    .conv_frame_size = 256,      // 设置每帧转换的大小为 256 字节
+    .max_store_buf_size = 1024, // 设置最大存储空间为 1KB
+    .conv_frame_size = 256,     // 设置每帧转换的大小为 256 字节
 };
 adc_continuous_evt_cbs_t adc_cbs = {
     .on_conv_done = NULL, // 设置转换完成的回调函数
 };
 adc_continuous_config_t adc_dig_cfg = {
-    .pattern_num = 2,                        // 设置通道数量
-    .adc_pattern = adc_pattern,              // 设置通道参数
-    .sample_freq_hz = 20 * 1000,             // 设置采样频率为 20kHz
-    .conv_mode = ADC_CONV_SINGLE_UNIT_1,     // 设置转换模式为单通道转换，转换模块为 ADC1
-    .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,  // 设置输出格式为 TYPE2（暂时不知道什么格式）
+    .pattern_num = 2,                       // 设置通道数量
+    .adc_pattern = adc_pattern,             // 设置通道参数
+    .sample_freq_hz = 20 * 1000,            // 设置采样频率为 20kHz
+    .conv_mode = ADC_CONV_SINGLE_UNIT_1,    // 设置转换模式为单通道转换，转换模块为 ADC1
+    .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2, // 设置输出格式为 TYPE2（暂时不知道什么格式）
 };
 
 /*-----------------------------------------------------------------------------
@@ -328,8 +317,7 @@ void data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t cmd, int ret)
     // 4. add data_list, sizeof(data_list) = data_length
     // 需要小于 COM_DATA_BUFFER_LENGTH - (5 + 2 + 5 + 3)，即 2048 - 16 = 2032
 
-    if (data_length > 0 && data_sent != NULL)
-    {
+    if (data_length > 0 && data_sent != NULL) {
         memcpy((uint8_t *)(com_data_send_buffer + pos), (const uint8_t *)data_sent, data_length);
         pos += data_length;
         com_data_send_buffer[pos++] = ':'; // 分隔符
@@ -355,22 +343,22 @@ void massive_data_pack(uint8_t *data_sent, size_t data_length, task_cmd_t cmd, i
         ESP_LOGE(TAG, "Invalid package size or data length");
         return;
     }
-    
+
     size_t package_count = (data_length + package_size - 1) / package_size; // 避免除零错误，使用向上取整
 
     for (size_t i = 0; i < package_count; i++) {
         size_t data_size = (i == package_count - 1) ? (data_length % package_size) : package_size;
-        if (data_size == 0) data_size = package_size; // 处理最后一个包大小为0的情况
-        
-        data_pack((uint8_t *)(data_sent + i * package_size), data_size , cmd, ret);
+        if (data_size == 0)
+            data_size = package_size; // 处理最后一个包大小为0的情况
+
+        data_pack((uint8_t *)(data_sent + i * package_size), data_size, cmd, ret);
         xSemaphoreGive(semaphore_task_notify);
 
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
-int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *content,
-                              size_t *content_length)
+int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *content, size_t *content_length)
 {
     size_t pos = 0;
 
@@ -395,7 +383,7 @@ int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *con
         return MXDBG_ERR_DATA_UNPACK_SEPARATOR_ERROR;
     }
     *cmd = (task_cmd_t)data[pos++];
-    
+
     if (pos >= data_length || data[pos++] != ':') {
         ESP_LOGE(TAG, "Protocol separator error after command");
         return MXDBG_ERR_DATA_UNPACK_SEPARATOR_ERROR;
@@ -403,7 +391,8 @@ int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *con
 
     // data:
     if (data_length <= 10) { // no data
-        if (content_length) *content_length = 0;
+        if (content_length)
+            *content_length = 0;
     } else {
         if (data_length < 3) {
             ESP_LOGE(TAG, "Data too short for CRC check");
@@ -412,7 +401,7 @@ int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *con
         if (data[data_length - 3] != ':') { // format error
             ESP_LOGE(TAG, "Protocol separator error before CRC");
             return MXDBG_ERR_DATA_UNPACK_SEPARATOR_ERROR;
-        } else {                                // data exists, extract data
+        } else { // data exists, extract data
             if (content_length) {
                 *content_length = data_length - 11; // 5 bytes header + 1 byte cmd + 3 bytes separator + 2 bytes crc
                 if (content && *content_length > 0) {
@@ -430,8 +419,6 @@ int data_unpack(uint8_t *data, size_t data_length, task_cmd_t *cmd, uint8_t *con
 
     return ESP_OK;
 }
-
-
 
 esp_err_t i2c_init(i2c_port_t port)
 {
@@ -516,7 +503,6 @@ void low_freq_pwm_init(void)
 
 void low_freq_pwm_deinit(void)
 {
-
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
@@ -559,11 +545,8 @@ esp_err_t spi_init(uint8_t master_slave_mode)
             ESP_LOGE(TAG, "SPI device add failed");
             return ret;
         }
-    }
-    else if(master_slave_mode == 1)
-    {
-
-        spi_handshake_init();        
+    } else if (master_slave_mode == 1) {
+        spi_handshake_init();
 
         gpio_set_pull_mode(buscfg.mosi_io_num, GPIO_PULLUP_ONLY);
         gpio_set_pull_mode(buscfg.sclk_io_num, GPIO_PULLUP_ONLY);
@@ -595,9 +578,7 @@ esp_err_t spi_deinit(int master_slave_mode)
             ESP_LOGE(TAG, "SPI bus free failed");
             return ret;
         }
-    }
-    else if(master_slave_mode == 1)
-    {
+    } else if (master_slave_mode == 1) {
         ret = spi_slave_free(SPI2_HOST);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "SPI slave free failed");
@@ -1007,11 +988,11 @@ void task_duty_call(void *pvParameters)
 
                     xSemaphoreGive(semaphore_reset_device);
                     break;
-                
+
                 case TASK_ADC_READ:
                     xSemaphoreGive(semaphore_adc_read);
                     break;
-                
+
                 case TASK_ADC_CONFIG:
                     xSemaphoreGive(semaphore_adc_config);
                     break;
@@ -1019,7 +1000,7 @@ void task_duty_call(void *pvParameters)
                 case TASK_SOFT_I2C_CONFIG:
                     xSemaphoreGive(semaphore_soft_i2c_config);
                     break;
-                
+
                 case TASK_SOFT_I2C_WRITE_READ:
                     xSemaphoreGive(semaphore_soft_i2c_write_read);
                     break;
@@ -1070,6 +1051,8 @@ void task_i2c_write_read(void *pvParameters)
     uint8_t *read_data_list = NULL;
     uint32_t repeat = 0;
     uint32_t repeat_delay_us = 0;
+    uint32_t repeat_index = 0;
+    uint8_t mode = 0; // Work mode of Hardware I2C. 0: write and read, 1: write only, 2: read only
 
     while (1) {
         if (xSemaphoreTake(semaphore_i2c_write_read, portMAX_DELAY) == pdTRUE) {
@@ -1087,112 +1070,107 @@ void task_i2c_write_read(void *pvParameters)
             // ESP_LOGI(TAG, "I2C port: %d, slave id: %d, write length: %d, read length: %d", i2c_port, slave_id,
             //          write_length, read_length);
 
-            if (write_length > 0) {
-                write_data_list = (uint8_t *)malloc(write_length);
-                if (!write_data_list) {
-                    ESP_LOGE(TAG, "Memory allocation failed for write_data_list");
-                    ret = ESPRESSIF_ERR_NO_MEM;
-                    data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
-                    xSemaphoreGive(semaphore_task_notify);
-                    continue;
-                }
-                memcpy(write_data_list, &com_data_content[19], write_length);
+            if (write_length > 0 && read_length > 0) {
+                mode = 0; // Write and read
+            } else if (write_length > 0 && read_length <= 0) {
+                mode = 1; // Write only
+            } else if (write_length <= 0 && read_length > 0) {
+                mode = 2; // Read only
+            } else {
+                ESP_LOGE(TAG, "Invalid I2C operation");
+                ret = MXDBG_ERR_I2C_INVALID_OPERATION;
+                data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
+                xSemaphoreGive(semaphore_task_notify);
+                continue;
+            }
 
-                if (read_length > 0) {
+            switch (mode) {
+                case 0: // Write and read
+                    repeat_index = 0;
+                    write_data_list = (uint8_t *)malloc(write_length);
                     read_data_list = (uint8_t *)malloc(repeat == 0 ? read_length : repeat * read_length);
-                    if (!read_data_list) {
-                        ESP_LOGE(TAG, "Memory allocation failed for read_data_list");
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        free(write_data_list);
-                        write_data_list = NULL;
-                        data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                        uint32_t repeat_index = 0;
-                        do{
-                            // Write and read data
-                            ret = i2c_master_write_read_device(i2c_port, slave_id, write_data_list, write_length,
-                                                            (read_data_list + repeat_index * read_length), read_length, 1000 / portTICK_PERIOD_MS);
-                            if (ret != ESP_OK) {
-                                ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
-                                ret = MXDBG_ERR_I2C_WRITE_READ_FAILED;
-                            }
 
-                            if (repeat != 0)
-                            {
-                                vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
-                                repeat_index++;
-                            }
-                        }while(repeat_index < repeat);
-                    } else {
-                        ESP_LOGE(TAG, "Memory allocation failed for read_data_list");
+                    if (write_data_list == NULL || read_data_list == NULL) {
+                        ESP_LOGE(TAG, "Memory allocation failed for I2C data lists");
                         ret = ESPRESSIF_ERR_NO_MEM;
-                        free(write_data_list);
-                        write_data_list = NULL;
                         data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
                         xSemaphoreGive(semaphore_task_notify);
                         continue;
                     }
-                } else {
-                    // Write data only
+
+                    memcpy(write_data_list, &(com_data_content[19]), write_length);
+
+                    do {
+                        ret = i2c_master_write_read_device(i2c_port, slave_id, write_data_list, write_length,
+                                                           (read_data_list + repeat_index * read_length), read_length,
+                                                           1000 / portTICK_PERIOD_MS);
+                        if (ret != ESP_OK) {
+                            ESP_LOGE(TAG, "I2C write failed");
+                            ret = MXDBG_ERR_I2C_WRITE_READ_FAILED;
+                        }
+
+                        if (repeat != 0) {
+                            vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
+                            repeat_index++;
+                        }
+                    } while (repeat_index < repeat);
+
+                    break;
+
+                case 1: // Write only
+                    write_data_list = (uint8_t *)malloc(write_length);
+                    if (write_data_list == NULL) {
+                        ESP_LOGE(TAG, "Memory allocation failed for I2C write data list");
+                        ret = ESPRESSIF_ERR_NO_MEM;
+                        data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
+                        xSemaphoreGive(semaphore_task_notify);
+                        continue;
+                    }
+
+                    memcpy(write_data_list, &(com_data_content[19]), write_length);
+
                     ret = i2c_master_write_to_device(i2c_port, slave_id, write_data_list, write_length,
                                                      1000 / portTICK_PERIOD_MS);
                     if (ret != ESP_OK) {
                         ESP_LOGE(TAG, "I2C write failed, ret: %d", ret);
                         ret = MXDBG_ERR_I2C_WRITE_FAILED;
                     }
-                }
-            } else {
-                if (read_length > 0) {
+                    break;
+
+                case 2: // Read only
+                    repeat_index = 0;
                     read_data_list = (uint8_t *)malloc(repeat == 0 ? read_length : repeat * read_length);
-                    if (!read_data_list) {
-                        ESP_LOGE(TAG, "Memory allocation failed for read_data_list");
+
+                    if (read_data_list == NULL) {
+                        ESP_LOGE(TAG, "Memory allocation failed for I2C read data list");
                         ret = ESPRESSIF_ERR_NO_MEM;
                         data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
                         xSemaphoreGive(semaphore_task_notify);
                         continue;
                     }
-                        uint32_t repeat_index = 0;
-                        // Read data only
-                        do {
-                            ret = i2c_master_read_from_device(i2c_port, 
-                                                              slave_id, 
-                                                              (read_data_list + repeat_index * read_length), 
-                                                              read_length,
-                                                              1000 / portTICK_PERIOD_MS);
-                            if (ret != ESP_OK) {
-                                ESP_LOGE(TAG, "I2C read failed");
-                                ret = MXDBG_ERR_I2C_READ_FAILED;
-                            }
 
-                            if (repeat != 0)
-                            {
-                                vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
-                                repeat_index++;
-                            }
-                        } while(repeat_index < repeat);
-                } else {
-                    // Invalid I2C operation
-                    ESP_LOGE(TAG, "Invalid I2C operation");
+                    do {
+                        ret =
+                            i2c_master_read_from_device(i2c_port, slave_id, read_data_list + repeat_index * read_length,
+                                                        read_length, 1000 / portTICK_PERIOD_MS);
+                        if (ret != ESP_OK) {
+                            ESP_LOGE(TAG, "I2C read failed");
+                            ret = MXDBG_ERR_I2C_READ_FAILED;
+                        }
 
-                    ret = MXDBG_ERR_I2C_INVALID_OPERATION;
-                    data_pack(NULL, 0, TASK_I2C_WRITE_READ, ret);
-                    xSemaphoreGive(semaphore_task_notify);
+                        if (repeat != 0) {
+                            vTaskDelay(pdMS_TO_TICKS(repeat_delay_us));
+                            repeat_index++;
+                        }
+                    } while (repeat_index < repeat);
 
-                    continue;
-                }
+                    break;
+
+                default:
+                    break;
             }
 
-            // if (repeat)
-            // {
-            //     ESP_LOGI("TAG", "I2C write read repeat: %ld", repeat);
-            //     ESP_LOGI("TAG", "I2C write read repeat delay: %ld", repeat_delay_us);
-            //     ESP_LOG_BUFFER_HEXDUMP(TAG, read_data_list, repeat * read_length, ESP_LOG_INFO);
-            // }
             data_pack(read_data_list, repeat == 0 ? read_length : repeat * read_length, TASK_I2C_WRITE_READ, ret);
-
-            //--------------------------------------------------------------------------------
 
             // 确保在释放前进行非空检查
             if (write_data_list) {
@@ -1207,9 +1185,9 @@ void task_i2c_write_read(void *pvParameters)
             xSemaphoreGive(semaphore_task_notify);
         }
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }
-
 
 void task_i2c_config(void *pvParameters)
 {
@@ -1313,9 +1291,8 @@ void task_soft_i2c_write_read(void *pvParameters)
     int ret = 0;
     static portMUX_TYPE soft_i2c_spinlock = portMUX_INITIALIZER_UNLOCKED;
 
-    while(1) {
+    while (1) {
         if (xSemaphoreTake(semaphore_soft_i2c_write_read, portMAX_DELAY) == pdTRUE) {
-
             uint8_t slave_id = com_data_content[0];
             uint8_t port = com_data_content[1];
             size_t write_length = DATA_SYNTHESIS_4_BYTES(&(com_data_content[2]));
@@ -1323,8 +1300,7 @@ void task_soft_i2c_write_read(void *pvParameters)
             uint8_t *write_data_list = NULL;
             uint8_t *read_data_list = NULL;
 
-            if (write_length > 0)
-            {
+            if (write_length > 0) {
                 write_data_list = (uint8_t *)malloc(write_length);
                 if (!write_data_list) {
                     ESP_LOGE(TAG, "Memory allocation failed for write_data_list");
@@ -1336,11 +1312,10 @@ void task_soft_i2c_write_read(void *pvParameters)
                 memcpy(write_data_list, &com_data_content[10], write_length);
             }
 
-            if (read_length > 0)
-            {
+            if (read_length > 0) {
                 read_data_list = (uint8_t *)malloc(read_length);
                 if (!read_data_list) {
-                    ESP_LOGE(TAG, "Memory allocation failed for read_data_list");
+                    ESP_LOGE(TAG, "Memory allocation failed for read_data_list %d", __LINE__);
                     ret = ESPRESSIF_ERR_NO_MEM;
                     if (write_data_list) {
                         free(write_data_list);
@@ -1354,20 +1329,18 @@ void task_soft_i2c_write_read(void *pvParameters)
             }
 
             taskENTER_CRITICAL(&soft_i2c_spinlock);
-            ret = soft_i2c_write_read(&(i2c_slaves[port]), slave_id, write_data_list, write_length, read_data_list, read_length, 0);
+            ret = soft_i2c_write_read(&(i2c_slaves[port]), slave_id, write_data_list, write_length, read_data_list,
+                                      read_length, 0);
             taskEXIT_CRITICAL(&soft_i2c_spinlock);
-            
+
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "I2C write read failed, ret: %d", ret);
                 ret = MXDBG_ERR_SOFT_I2C_WRITE_READ_FAILED;
             }
 
-            if (read_length > 0)
-            {
+            if (read_length > 0) {
                 data_pack(read_data_list, read_length, TASK_SOFT_I2C_WRITE_READ, ret);
-            }
-            else
-            {
+            } else {
                 data_pack(NULL, 0, TASK_SOFT_I2C_WRITE_READ, ret);
             }
             xSemaphoreGive(semaphore_task_notify);
@@ -1409,15 +1382,13 @@ void task_gpio_write_read(void *pvParameters)
             {
                 level = (uint8_t)gpio_get_level((gpio_num_t)pin_num);
                 data_pack(&level, 1, TASK_GPIO_WRITE_READ, 0);
-            }
-            else {
+            } else {
                 ret = MXDBG_ERR_GPIO_INVALID_OPERATION;
                 ESP_LOGE(TAG, "Invalid GPIO operation");
                 data_pack(NULL, 0, TASK_GPIO_WRITE_READ, ret);
             }
 
             ESP_LOGI(TAG, "GPIO operation: %d, pin num: %d, level: %d", operation, pin_num, level);
-
 
             xSemaphoreGive(semaphore_task_notify);
         }
@@ -1492,11 +1463,11 @@ void task_spi_write_read(void *pvParameters)
 
             if (read_len > write_len) {
                 if (master_slave_mode == 0) {
-                ret = MXDBG_ERR_SPI_READ_LEN_TOO_LONG;
-                ESP_LOGE(TAG, "Read length should not be larger than write length");
-                data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                xSemaphoreGive(semaphore_task_notify);
-                continue;
+                    ret = MXDBG_ERR_SPI_READ_LEN_TOO_LONG;
+                    ESP_LOGE(TAG, "Read length should not be larger than write length");
+                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                    xSemaphoreGive(semaphore_task_notify);
+                    continue;
                 }
             }
 
@@ -1511,15 +1482,129 @@ void task_spi_write_read(void *pvParameters)
                          critical_mode ? "True" : "False", justice, justice_index, examine_period, timeout);
             }
 
-            if (master_slave_mode == 0){
-            spi_device_acquire_bus(spi, portMAX_DELAY);
+            if (master_slave_mode == 0) {
+                spi_device_acquire_bus(spi, portMAX_DELAY);
 
-            // in half-duplex mode
-            if ((devcfg.flags & 0x00000010) >> 4) {
-                if (!critical_mode) {
+                // in half-duplex mode
+                if ((devcfg.flags & 0x00000010) >> 4) {
+                    if (!critical_mode) {
+                        if (write_len > 0) {
+                            t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+
+                            t.length = write_len * 8; // transaction length is in bits
+                            write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
+                            if (write_buffer == NULL) {
+                                ret = ESPRESSIF_ERR_NO_MEM;
+                                ESP_LOGE(TAG, "Memory allocation failed");
+                                data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                xSemaphoreGive(semaphore_task_notify);
+                                continue;
+                            }
+                            memcpy(write_buffer, &com_data_content[8], write_len);
+
+                            t.tx_buffer = write_buffer;
+
+                            ret = spi_device_transmit(spi, &t); // Transmit!
+                        }
+
+                        if (read_len > 0) {
+                            t.tx_buffer = NULL;
+                            t.length = 0;
+
+                            read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                            if (read_buffer == NULL) {
+                                ret = ESPRESSIF_ERR_NO_MEM;
+                                ESP_LOGE(TAG, "Memory allocation failed");
+                                data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                xSemaphoreGive(semaphore_task_notify);
+                                continue;
+                            }
+                            memset(read_buffer, 0, read_len);
+
+                            t.rxlength = read_len * 8;
+                            t.rx_buffer = read_buffer;
+                            ret = spi_device_transmit(spi, &t);
+                        }
+
+                        // depress the single ringing in MOSI line after the transaction
+                        spi_transaction_t t_null = { 0 };
+                        spi_device_transmit(spi, &t_null);
+
+                    } else { // in critical mode
+
+                        if (write_len > 0 && read_len > 0) {
+                            counts = timeout / examine_period;
+
+                            // 预先分配内存，避免在循环中重复分配
+                            if (write_len > 0) {
+                                write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
+                                if (write_buffer == NULL) {
+                                    ret = ESPRESSIF_ERR_NO_MEM;
+                                    ESP_LOGE(TAG, "Memory allocation failed for write_buffer in critical mode");
+                                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                    xSemaphoreGive(semaphore_task_notify);
+                                    continue;
+                                }
+                                memcpy(write_buffer, &com_data_content[8], write_len);
+                            }
+
+                            if (read_len > 0) {
+                                read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                                if (read_buffer == NULL) {
+                                    ret = ESPRESSIF_ERR_NO_MEM;
+                                    ESP_LOGE(TAG, "Memory allocation failed for read_buffer in critical mode");
+                                    if (write_buffer) {
+                                        heap_caps_free(write_buffer);
+                                        write_buffer = NULL;
+                                    }
+                                    data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+                                    xSemaphoreGive(semaphore_task_notify);
+                                    continue;
+                                }
+                            }
+
+                            for (uint32_t i = 0; i < counts; i += examine_period) {
+                                memset(&t, 0, sizeof(t));
+
+                                if (write_len > 0) {
+                                    t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
+                                    t.length = write_len * 8; // transaction length is in bits
+                                    t.tx_buffer = write_buffer;
+                                    ret = spi_device_transmit(spi, &t); // Transmit!
+                                }
+
+                                if (read_len > 0) {
+                                    t.tx_buffer = NULL;
+                                    t.length = 0;
+                                    memset(read_buffer, 0, read_len);
+                                    t.rxlength = read_len * 8;
+                                    t.rx_buffer = read_buffer;
+                                    ret = spi_device_transmit(spi, &t);
+                                }
+
+                                // depress the single ringing in MOSI line after the transaction
+                                spi_transaction_t t_null = { 0 };
+                                spi_device_transmit(spi, &t_null);
+
+                                esp_rom_delay_us(examine_period * 1000);
+
+                                if (read_buffer && read_buffer[justice_index] == justice) {
+                                    examine_result = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            ESP_LOGE(TAG, "Critical mode must have both write and read data");
+                            data_pack(NULL, 0, TASK_SPI_WRITE_READ, MXDBG_ERR_SPI_INVALID_OPERATION);
+                            xSemaphoreGive(semaphore_task_notify);
+                            continue;
+                        }
+                    }
+
+                }
+                // not in half-duplex mode
+                else {
                     if (write_len > 0) {
-                        t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-
                         t.length = write_len * 8; // transaction length is in bits
                         write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
                         if (write_buffer == NULL) {
@@ -1532,15 +1617,11 @@ void task_spi_write_read(void *pvParameters)
                         memcpy(write_buffer, &com_data_content[8], write_len);
 
                         t.tx_buffer = write_buffer;
-
-                        ret = spi_device_transmit(spi, &t); // Transmit!
                     }
 
                     if (read_len > 0) {
-                        t.tx_buffer = NULL;
-                        t.length = 0;
-
-                        read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
+                        t.rxlength = read_len * 8;
+                        read_buffer = (uint8_t *)heap_caps_malloc(read_len + 1, MALLOC_CAP_DMA);
                         if (read_buffer == NULL) {
                             ret = ESPRESSIF_ERR_NO_MEM;
                             ESP_LOGE(TAG, "Memory allocation failed");
@@ -1550,124 +1631,42 @@ void task_spi_write_read(void *pvParameters)
                         }
                         memset(read_buffer, 0, read_len);
 
-                        t.rxlength = read_len * 8;
                         t.rx_buffer = read_buffer;
-                        ret = spi_device_transmit(spi, &t);
                     }
 
-                    // depress the single ringing in MOSI line after the transaction
-                    spi_transaction_t t_null = { 0 };
-                    spi_device_transmit(spi, &t_null);
-
-                } else {  // in critical mode
-
-                    if (write_len > 0 && read_len > 0) {
+                    if (critical_mode) {
                         counts = timeout / examine_period;
 
-                        // 预先分配内存，避免在循环中重复分配
-                        if (write_len > 0) {
-                            write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
-                            if (write_buffer == NULL) {
-                                ret = ESPRESSIF_ERR_NO_MEM;
-                                ESP_LOGE(TAG, "Memory allocation failed for write_buffer in critical mode");
+                        for (uint32_t i = 0; i < counts; i += examine_period) {
+                            ret = spi_device_transmit(spi, &t); // Transmit and receive
+                            if (ret != ESP_OK) {
+                                ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
+                                ESP_LOGE(TAG, "SPI transaction failed");
                                 data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                                xSemaphoreGive(semaphore_task_notify);
-                                continue;
-                            }
-                            memcpy(write_buffer, &com_data_content[8], write_len);
-                        }
 
-                        if (read_len > 0) {
-                            read_buffer = (uint8_t *)heap_caps_malloc(read_len, MALLOC_CAP_DMA);
-                            if (read_buffer == NULL) {
-                                ret = ESPRESSIF_ERR_NO_MEM;
-                                ESP_LOGE(TAG, "Memory allocation failed for read_buffer in critical mode");
-                                if (write_buffer) {
+                                if (write_len > 0) {
                                     heap_caps_free(write_buffer);
                                     write_buffer = NULL;
                                 }
-                                data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
+
+                                if (read_len > 0) {
+                                    heap_caps_free(read_buffer);
+                                    read_buffer = NULL;
+                                }
+
                                 xSemaphoreGive(semaphore_task_notify);
                                 continue;
+                            } else {
+                                esp_rom_delay_us(examine_period * 1000);
+
+                                if (read_buffer[justice_index] == justice) {
+                                    examine_result = true;
+                                    break;
+                                }
                             }
                         }
-
-                        for (uint32_t i = 0; i < counts; i += examine_period) {
-
-                            memset(&t, 0, sizeof(t));
-
-                            if (write_len > 0) {
-                                t.flags = SPI_TRANS_CS_KEEP_ACTIVE;
-                                t.length = write_len * 8; // transaction length is in bits
-                                t.tx_buffer = write_buffer;
-                                ret = spi_device_transmit(spi, &t); // Transmit!
-                            }
-
-                            if (read_len > 0) {
-                                t.tx_buffer = NULL;
-                                t.length = 0;
-                                memset(read_buffer, 0, read_len);
-                                t.rxlength = read_len * 8;
-                                t.rx_buffer = read_buffer;
-                                ret = spi_device_transmit(spi, &t);
-                            }
-
-                            // depress the single ringing in MOSI line after the transaction
-                            spi_transaction_t t_null = { 0 };
-                            spi_device_transmit(spi, &t_null);
-
-                            esp_rom_delay_us(examine_period * 1000);
-
-                            if (read_buffer && read_buffer[justice_index] == justice) {
-                                examine_result = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        ESP_LOGE(TAG, "Critical mode must have both write and read data");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, MXDBG_ERR_SPI_INVALID_OPERATION);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                }
-
-            }
-            // not in half-duplex mode
-            else {
-                if (write_len > 0) {
-                    t.length = write_len * 8; // transaction length is in bits
-                    write_buffer = (uint8_t *)heap_caps_malloc(write_len, MALLOC_CAP_DMA);
-                    if (write_buffer == NULL) {
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        ESP_LOGE(TAG, "Memory allocation failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                    memcpy(write_buffer, &com_data_content[8], write_len);
-
-                    t.tx_buffer = write_buffer;
-                }
-
-                if (read_len > 0) {
-                    t.rxlength = read_len * 8;
-                    read_buffer = (uint8_t *)heap_caps_malloc(read_len + 1, MALLOC_CAP_DMA);
-                    if (read_buffer == NULL) {
-                        ret = ESPRESSIF_ERR_NO_MEM;
-                        ESP_LOGE(TAG, "Memory allocation failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
-                    }
-                    memset(read_buffer, 0, read_len);
-
-                    t.rx_buffer = read_buffer;
-                }
-
-                if (critical_mode) {
-                    counts = timeout / examine_period;
-
-                    for (uint32_t i = 0; i < counts; i += examine_period) {
+                    } else // not in critical mode
+                    {
                         ret = spi_device_transmit(spi, &t); // Transmit and receive
                         if (ret != ESP_OK) {
                             ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
@@ -1686,51 +1685,21 @@ void task_spi_write_read(void *pvParameters)
 
                             xSemaphoreGive(semaphore_task_notify);
                             continue;
-                        } else {
-                            esp_rom_delay_us(examine_period * 1000);
-
-                            if (read_buffer[justice_index] == justice) {
-                                examine_result = true;
-                                break;
-                            }
                         }
-                    }
-                } else // not in critical mode
-                {
-                    ret = spi_device_transmit(spi, &t); // Transmit and receive
-                    if (ret != ESP_OK) {
-                        ret = MXDBG_ERR_SPI_TRANSACTION_FAILED;
-                        ESP_LOGE(TAG, "SPI transaction failed");
-                        data_pack(NULL, 0, TASK_SPI_WRITE_READ, ret);
-
-                        if (write_len > 0) {
-                            heap_caps_free(write_buffer);
-                            write_buffer = NULL;
-                        }
-
-                        if (read_len > 0) {
-                            heap_caps_free(read_buffer);
-                            read_buffer = NULL;
-                        }
-
-                        xSemaphoreGive(semaphore_task_notify);
-                        continue;
                     }
                 }
-            }
 
-            spi_device_release_bus(spi); // When using SPI
+                spi_device_release_bus(spi); // When using SPI
 
-            }
-            else if (master_slave_mode == 1) // treat esp32s3 as a spi slave, then receive data from master only
+            } else if (master_slave_mode == 1) // treat esp32s3 as a spi slave, then receive data from master only
             {
                 spi_slave_transaction_t t;
                 memset(&t, 0, sizeof(t));
-                
+
                 uint8_t bytes_aligned_size = 128;
                 size_t malloc_size = bytes_aligned_size - read_len % bytes_aligned_size + read_len;
 
-                read_buffer = (uint8_t *)heap_caps_malloc(malloc_size, MALLOC_CAP_DMA);  
+                read_buffer = (uint8_t *)heap_caps_malloc(malloc_size, MALLOC_CAP_DMA);
                 if (read_buffer == NULL) {
                     ret = ESPRESSIF_ERR_NO_MEM;
                     ESP_LOGE(TAG, "Memory allocation failed");
@@ -1761,21 +1730,17 @@ void task_spi_write_read(void *pvParameters)
                     xSemaphoreGive(semaphore_task_notify);
                     continue;
                 }
-            
-                // ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, read_len, ESP_LOG_INFO);
 
+                // ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, read_len, ESP_LOG_INFO);
             }
 
-            if (read_len > CONFIG_TINYUSB_CDC_TX_BUFSIZE)
-            {
+            if (read_len > CONFIG_TINYUSB_CDC_TX_BUFSIZE) {
                 ESP_LOGI(TAG, "Read length is too long, split it into multiple packages");
                 massive_data_pack((uint8_t *)(read_buffer), (size_t)read_len, TASK_SPI_WRITE_READ, 0);
 
                 // ESP_LOG_BUFFER_HEXDUMP(TAG, read_buffer, 16*100, ESP_LOG_INFO);
                 ESP_LOGI(TAG, "Data sent");
-            }
-            else
-            {
+            } else {
                 if (critical_mode) {
                     ((uint8_t *)t.rx_buffer)[read_len] = examine_result ? 0x01 : 0x00;
                     data_pack(t.rx_buffer, read_len + 1, TASK_SPI_WRITE_READ, 0);
@@ -1862,20 +1827,19 @@ void task_spi_config(void *pvParameters)
             buscfg.intr_flags = intr_flags;
 
             if (master_slave_mode == 0) {
-            devcfg.command_bits = command_bits;
-            devcfg.address_bits = address_bits;
-            devcfg.dummy_bits = dummy_bits;
-            devcfg.mode = mode;
-            devcfg.duty_cycle_pos = duty_cycle_pos;
-            devcfg.cs_ena_pretrans = cs_ena_pretrans;
-            devcfg.cs_ena_posttrans = cs_ena_posttrans;
-            devcfg.clock_speed_hz = clock_speed_hz;
-            devcfg.input_delay_ns = input_delay_ns;
-            devcfg.spics_io_num = spics_io_num;
-            devcfg.flags = device_interface_flags;
-            devcfg.queue_size = queue_size;
-            }
-            else if (master_slave_mode == 1){
+                devcfg.command_bits = command_bits;
+                devcfg.address_bits = address_bits;
+                devcfg.dummy_bits = dummy_bits;
+                devcfg.mode = mode;
+                devcfg.duty_cycle_pos = duty_cycle_pos;
+                devcfg.cs_ena_pretrans = cs_ena_pretrans;
+                devcfg.cs_ena_posttrans = cs_ena_posttrans;
+                devcfg.clock_speed_hz = clock_speed_hz;
+                devcfg.input_delay_ns = input_delay_ns;
+                devcfg.spics_io_num = spics_io_num;
+                devcfg.flags = device_interface_flags;
+                devcfg.queue_size = queue_size;
+            } else if (master_slave_mode == 1) {
                 slvcfg.spics_io_num = spics_io_num;
                 slvcfg.flags = device_interface_flags;
                 slvcfg.queue_size = queue_size;
@@ -1932,7 +1896,8 @@ void task_pwm_run_stop(void *pvParameters)
                         ret = MXDBG_ERR_PWM_RUN_ALREADY;
                     } else {
                         // make it run
-                        ret = mcpwm_comparator_set_compare_value(pPwmChannel->comparator, pPwmChannel->duty_cycle_ticks);
+                        ret =
+                            mcpwm_comparator_set_compare_value(pPwmChannel->comparator, pPwmChannel->duty_cycle_ticks);
                         if (ret != ESP_OK) {
                             ESP_LOGE(TAG, "Failed to set compare value");
                             xSemaphoreGive(semaphore_pwm_running_state);
@@ -1955,7 +1920,7 @@ void task_pwm_run_stop(void *pvParameters)
 
                         pPwmChannel->compare_action_start.comparator = pPwmChannel->comparator;
                         ret = mcpwm_generator_set_action_on_compare_event(pPwmChannel->generator,
-                                                                            pPwmChannel->compare_action_start);
+                                                                          pPwmChannel->compare_action_start);
                         if (ret != ESP_OK) {
                             ESP_LOGE(TAG, "Failed to set compare action");
                             xSemaphoreGive(semaphore_pwm_running_state);
@@ -1993,7 +1958,7 @@ void task_pwm_run_stop(void *pvParameters)
 
                         pPwmChannel->compare_action_stop.comparator = pPwmChannel->comparator;
                         ret = mcpwm_generator_set_action_on_compare_event(pPwmChannel->generator,
-                                                                            pPwmChannel->compare_action_stop);
+                                                                          pPwmChannel->compare_action_stop);
                         if (ret != ESP_OK) {
                             ESP_LOGE(TAG, "Failed to set compare action to stop");
                             xSemaphoreGive(semaphore_pwm_running_state);
@@ -2046,10 +2011,8 @@ void task_pwm_config(void *pvParameters)
             duty_cycle_ticks = DATA_SYNTHESIS_4_BYTES(&(com_data_content[6]));
             resolution_hz = DATA_SYNTHESIS_4_BYTES(&(com_data_content[10]));
 
-            if ((xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) && (channel == 0))
-            {
-                if (low_freq_pwm_run_state)
-                {
+            if ((xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) && (channel == 0)) {
+                if (low_freq_pwm_run_state) {
                     low_freq_pwm_run_state = false;
                     low_freq_pwm_deinit();
                 }
@@ -2113,14 +2076,12 @@ void task_pwm_config(void *pvParameters)
 
 void task_low_freq_pwm_config(void *pvParameters)
 {
-    while (1){
-        if (xSemaphoreTake(semaphore_low_freq_pwm_config, portMAX_DELAY) == pdTRUE)
-        {
+    while (1) {
+        if (xSemaphoreTake(semaphore_low_freq_pwm_config, portMAX_DELAY) == pdTRUE) {
             uint32_t freq = DATA_SYNTHESIS_4_BYTES(&(com_data_content[0]));
             uint32_t duty = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
 
-            if (freq > 1000)
-            {
+            if (freq > 1000) {
                 ESP_LOGE(TAG, "Invalid frequency");
                 data_pack(NULL, 0, TASK_LOW_FREQ_PWM_CONFIG, MXDBG_ERR_PWM_INVALID_FREQUENCY);
                 xSemaphoreGive(semaphore_task_notify);
@@ -2138,25 +2099,20 @@ void task_low_freq_pwm_config(void *pvParameters)
             // 如果停止了：
             //    检查 semaphore_low_freq_pwm_running_state 是否已停止，
             //    如果没停止，则 stop 后，low_freq_pwm_deinit() 它，
-            // 
+            //
             // 最后进行 low_freq_pwm_init()
-            
+
             bool low_freq_pwm_run = false;
 
-            if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE)
-            {
-                if (pwm_channels[0].run_state)
-                {
+            if (xSemaphoreTake(semaphore_pwm_running_state, 0) == pdTRUE) {
+                if (pwm_channels[0].run_state) {
                     pwm_channels[0].run_state = false;
                     pwm_deinit(&(pwm_channels[0]));
                 }
             }
 
-            if (xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE)
-            {
-                if (low_freq_pwm_run_state)
-                {
-
+            if (xSemaphoreTake(semaphore_low_freq_pwm_running_state, 0) == pdTRUE) {
+                if (low_freq_pwm_run_state) {
                     low_freq_pwm_run = true;
                     low_freq_pwm_run_state = false;
                     low_freq_pwm_deinit();
@@ -2165,8 +2121,7 @@ void task_low_freq_pwm_config(void *pvParameters)
 
             low_freq_pwm_init();
 
-            if (low_freq_pwm_run)
-            {
+            if (low_freq_pwm_run) {
                 ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
                 ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
             }
@@ -2177,19 +2132,18 @@ void task_low_freq_pwm_config(void *pvParameters)
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
-
 }
 
 void task_low_freq_pwm_run_stop(void *pvParameters)
 {
-    while (1){
+    while (1) {
         if (xSemaphoreTake(semaphore_low_freq_pwm_run_stop, portMAX_DELAY) == pdTRUE) {
             bool pwm_run_state = com_data_content[0] != 0 ? true : false;
 
             ESP_LOGI(TAG, "Run state: %s", (pwm_run_state ? "True" : "False"));
             ESP_LOGI(TAG, "Low frequency PWM duty: %ld", low_freq_pwm_duty);
 
-            if (pwm_run_state) {              // True
+            if (pwm_run_state) { // True
                 ESP_LOGI(TAG, "Low frequency PWM run");
                 ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, low_freq_pwm_duty);
 
@@ -2224,7 +2178,6 @@ void task_adc_config(void *pvParameters)
 
     while (1) {
         if (xSemaphoreTake(semaphore_adc_config, portMAX_DELAY) == pdTRUE) {
-
             uint32_t sampling_frequency = DATA_SYNTHESIS_4_BYTES(&(com_data_content[0]));
             uint32_t pattern_num = DATA_SYNTHESIS_4_BYTES(&(com_data_content[4]));
 
@@ -2246,7 +2199,7 @@ void task_adc_config(void *pvParameters)
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
             }
-            
+
             // 验证数据长度
             size_t expected_data_len = 8 + pattern_num * 4; // 8 bytes header + pattern_num * 4 bytes per pattern
             if (expected_data_len > sizeof(com_data_content)) {
@@ -2256,15 +2209,15 @@ void task_adc_config(void *pvParameters)
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
             }
-            
+
             memset(adc_pattern, 0, sizeof(adc_pattern));
-            memcpy(adc_pattern, &com_data_content[8], pattern_num * 4);  // since 4 bytes contained in adc pattern
+            memcpy(adc_pattern, &com_data_content[8], pattern_num * 4); // since 4 bytes contained in adc pattern
 
             ESP_LOGI(TAG, "ADC channel config list: ");
             for (uint32_t i = 0; i < pattern_num; i++) {
-                ESP_LOGI(TAG, "index %ld : channel %d, width %d, atten %d", 
-                        i, adc_pattern[i].channel, adc_pattern[i].bit_width, adc_pattern[i].atten);
-                
+                ESP_LOGI(TAG, "index %ld : channel %d, width %d, atten %d", i, adc_pattern[i].channel,
+                         adc_pattern[i].bit_width, adc_pattern[i].atten);
+
                 // 验证通道配置的有效性
                 if (adc_pattern[i].channel > 9 || adc_pattern[i].bit_width > SOC_ADC_DIGI_MAX_BITWIDTH) {
                     ESP_LOGE(TAG, "Invalid ADC pattern at index %ld", i);
@@ -2279,14 +2232,14 @@ void task_adc_config(void *pvParameters)
             adc_dig_cfg.sample_freq_hz = sampling_frequency;
             adc_dig_cfg.adc_pattern = adc_pattern;
 
-            ESP_LOGI(TAG, "ADC pattern_num: %ld, sample_freq_hz: %ld", 
-                    adc_dig_cfg.pattern_num, adc_dig_cfg.sample_freq_hz);
+            ESP_LOGI(TAG, "ADC pattern_num: %ld, sample_freq_hz: %ld", adc_dig_cfg.pattern_num,
+                     adc_dig_cfg.sample_freq_hz);
 
             // 安全地重新初始化ADC
             if (adc_handle != NULL) {
                 adc_deinit();
             }
-            
+
             ret = adc_init();
             if (ret != ESP_OK) {
                 ESP_LOGE(TAG, "ADC init failed: %s", esp_err_to_name(ret));
@@ -2295,8 +2248,8 @@ void task_adc_config(void *pvParameters)
 
             data_pack(NULL, 0, TASK_ADC_CONFIG, ret);
             xSemaphoreGive(semaphore_task_notify);
-            
-            next_iteration:;
+
+        next_iteration:;
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -2326,7 +2279,7 @@ void task_adc_read(void *pvParameters)
             }
 
             // 验证读取长度的合理性
-            if (read_len == 0 || read_len > 64*1024) { // 最大64KB
+            if (read_len == 0 || read_len > 64 * 1024) { // 最大64KB
                 ESP_LOGE(TAG, "Invalid ADC read length: %ld", read_len);
                 ret = ESP_ERR_INVALID_ARG;
                 data_pack(NULL, 0, TASK_ADC_READ, ret);
@@ -2355,9 +2308,9 @@ void task_adc_read(void *pvParameters)
                 xSemaphoreGive(semaphore_task_notify);
                 continue;
             }
-            
+
             ESP_LOGI(TAG, "ADC read completed, returned %ld bytes", ret_num);
-        
+
             if (ret_num > 0) {
                 data_pack(p_data, ret_num, TASK_ADC_READ, ESP_OK);
                 ESP_LOGI(TAG, "ADC data sent");
@@ -2779,31 +2732,31 @@ void tca9555pwr_init()
 
     uint16_t bit_mask = 0x0000;
 
-    uint8_t write_list[3] = {0x00, 0x00, 0x00};
-    uint8_t read_list[2] = {0x00, 0x00};
+    uint8_t write_list[3] = { 0x00, 0x00, 0x00 };
+    uint8_t read_list[2] = { 0x00, 0x00 };
 
-    for(uint8_t addr = 0x00; addr <= 0x7F; addr++) {
-        ret = i2c_master_write_read_device(1, addr, write_list, 1, read_list, 1, 1000/portTICK_PERIOD_MS);
+    for (uint8_t addr = 0x00; addr <= 0x7F; addr++) {
+        ret = i2c_master_write_read_device(1, addr, write_list, 1, read_list, 1, 1000 / portTICK_PERIOD_MS);
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "Found device at address: 0x%02X", addr);
         }
     }
 
     uint8_t reg_list[][3] = {
-        {0x06, 0xFF, 0xFF}, // set all pins as input mode
-        {0x04, 0x00, 0x00}, // disable polarity inversion
-        {0x02, 0x00, 0x00}, // set all pins as low level
+        { 0x06, 0xFF, 0xFF }, // set all pins as input mode
+        { 0x04, 0x00, 0x00 }, // disable polarity inversion
+        { 0x02, 0x00, 0x00 }, // set all pins as low level
     };
 
-    for (int i = 0; i < sizeof(reg_list)/sizeof(reg_list[0]); i++) {
-        ret = i2c_master_write_to_device(1, 0x20, reg_list[i], 3, 1000/portTICK_PERIOD_MS);
+    for (int i = 0; i < sizeof(reg_list) / sizeof(reg_list[0]); i++) {
+        ret = i2c_master_write_to_device(1, 0x20, reg_list[i], 3, 1000 / portTICK_PERIOD_MS);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "TCA9555PWR write failed.");
             return;
         }
     }
 
-    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000/portTICK_PERIOD_MS);
+    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "TCA9555PWR read failed.");
         return;
@@ -2815,7 +2768,7 @@ void tca9555pwr_init()
     write_list[1] = bit_mask & 0x00FF;
     write_list[2] = (bit_mask & 0xFF00) >> 8;
 
-    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000/portTICK_PERIOD_MS);
+    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "TCA9555PWR write failed.");
         return;
@@ -2823,7 +2776,7 @@ void tca9555pwr_init()
 
     write_list[0] = 0x02;
 
-    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000/portTICK_PERIOD_MS);
+    ret = i2c_master_write_read_device(1, 0x20, write_list, 1, read_list, 2, 1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "TCA9555PWR write failed.");
         return;
@@ -2836,7 +2789,7 @@ void tca9555pwr_init()
     write_list[1] = bit_mask & 0x00FF;
     write_list[2] = (bit_mask & 0xFF00) >> 8;
 
-    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000/portTICK_PERIOD_MS);
+    ret = i2c_master_write_to_device(1, 0x20, write_list, 3, 1000 / portTICK_PERIOD_MS);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "TCA9555PWR write failed.");
         return;
@@ -2867,16 +2820,14 @@ void usb_hid_main()
 
 void app_main()
 {
-    enum usb_mode
-    {
-        USB_MODE_CDC = 0,  // 00
-        USB_MODE_HID, // 01
+    enum usb_mode {
+        USB_MODE_CDC = 0, // 00
+        USB_MODE_HID,     // 01
     };
 
     uint8_t usb_mode = get_usb_mode();
 
-    switch (usb_mode)
-    {
+    switch (usb_mode) {
         case USB_MODE_CDC:
             ESP_LOGI(TAG, "USB mode: CDC");
             usb_cdc_mxdbg_main();
@@ -2886,7 +2837,7 @@ void app_main()
             ESP_LOGI(TAG, "USB mode: HID");
             usb_hid_main();
             break;
-            
+
         default:
             ESP_LOGI(TAG, "(Default) USB mode: CDC");
             usb_cdc_mxdbg_main();

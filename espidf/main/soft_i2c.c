@@ -62,7 +62,7 @@ soft_i2c_port_t i2c_slaves[8] = {
  * STATIC FUNCTIONS
  *---------------------------------------------------------------------------*/
 
-volatile static inline void I2C_DELAY(uint32_t ns) {
+static inline void I2C_DELAY(uint32_t ns) {
     if (ns == 0) {
         return;
     }
